@@ -1,2 +1,55 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Python files
+*.py text diff=python
+*.pyi text diff=python
+*.pyw text diff=python
+*.ipynb text diff=python
+
+# Python binary files
+*.db binary
+*.pkl binary
+*.pyc binary
+*.pyd binary
+*.pyo binary
+
+# FastAPI/Web specific
+*.html text diff=html
+*.css text diff=css
+*.js text diff=javascript
+*.json text
+*.yaml text
+*.yml text
+
+# Documentation
+*.md text diff=markdown
+*.rst text
+*.txt text
+
+# Docker
+*.dockerignore text
+Dockerfile text
+
+# Virtual environment
+.env text
+.env.* text
+requirements.txt text
+poetry.lock text
+pyproject.toml text
+
+# Git Config
+.gitattributes text
+.gitignore text
+.gitconfig text
+
+# Graphics
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.svg text
+
+# Exclude files from exporting
+.gitignore export-ignore
+.gitattributes export-ignore

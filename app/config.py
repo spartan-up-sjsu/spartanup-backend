@@ -1,5 +1,6 @@
 import os
 from pydantic_settings import BaseSettings
+from pymongo import MongoClient
 
 
 class Settings(BaseSettings):
@@ -12,3 +13,6 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+client = MongoClient(settings.MONGO_URI)
+db = client.spartan_up 
+items_collection = db.items

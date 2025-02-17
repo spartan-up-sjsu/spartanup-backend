@@ -1,26 +1,28 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
+from app.config import items_collection
+from app.schemas.item_schema import list_serialize_items
+from bson import ObjectId
+from app.models.item_model import ItemRead
 
 router = APIRouter()
 
-
 @router.get("/")
 async def get_items():
-    # TODO: Implement get all items
-    return []
-
+    items = list_serialize_items(items_collection.find())
+    return items
 
 @router.get("/{item_id}")
 async def get_item(item_id: str):
-    # TODO: Implement get single item
-    pass
+    item = items_collection.find_one({"_id": ObjectId(item_id)})
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return ItemRead(**item)
 
 
 @router.post("/")
-async def create_item():
-    # TODO: Implement create item
-    pass
-
+async def create_item(item:ItemRead):
+    items_collection.insert_one(item.model_dump())
 
 @router.put("/{item_id}")
 async def update_item(item_id: str):

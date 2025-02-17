@@ -1,0 +1,6 @@
+fastapi==0.115.8
+pydantic==2.10.6
+pydantic_settings==2.7.1
+PyJWT==2.9.0
+PyJWT==2.10.1
+python-dotenv==1.0.1

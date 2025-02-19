@@ -4,6 +4,7 @@ from pymongo import MongoClient
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
+import certifi
 
 
 class Settings(BaseSettings):
@@ -19,7 +20,7 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-client = MongoClient(settings.MONGO_URI)
+client = MongoClient(settings.MONGO_URI, tlsCAFile=certifi.where())
 
 
 async def upload_image(image_data: bytes) -> str:

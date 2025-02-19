@@ -2,11 +2,11 @@ from typing import Optional, List
 from pydantic import BaseModel, HttpUrl
 from datetime import datetime
 
+
 class ItemRead(BaseModel):
-    _id: str
     title: str
     description: Optional[str]
-    images: List[str] 
+    images: List[str]
     price: float
     condition: str
     category: str
@@ -15,3 +15,7 @@ class ItemRead(BaseModel):
     location: Optional[str]
     createdAt: datetime = None
     updatedAt: datetime = None
+
+
+class ItemFromDB(ItemRead):
+    _id: str

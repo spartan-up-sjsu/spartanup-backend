@@ -3,14 +3,16 @@ from typing import List
 from app.config import items_collection
 from app.schemas.item_schema import list_serialize_items
 from bson import ObjectId
-from app.models.item_model import ItemRead
+from app.models.item_model import ItemRead, ItemFromDB
 
 router = APIRouter()
+
 
 @router.get("/")
 async def get_items():
     items = list_serialize_items(items_collection.find())
     return items
+
 
 @router.get("/{item_id}")
 async def get_item(item_id: str):
@@ -21,8 +23,9 @@ async def get_item(item_id: str):
 
 
 @router.post("/")
-async def create_item(item:ItemRead):
+async def create_item(item: ItemRead):
     items_collection.insert_one(item.model_dump())
+
 
 @router.put("/{item_id}")
 async def update_item(item_id: str):

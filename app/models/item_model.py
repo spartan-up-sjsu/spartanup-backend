@@ -3,7 +3,7 @@ from pydantic import BaseModel, HttpUrl
 from datetime import datetime
 
 
-class ItemRead(BaseModel):
+class ItemCreate(BaseModel):
     title: str
     description: Optional[str]
     images: List[str]
@@ -13,6 +13,9 @@ class ItemRead(BaseModel):
     sellerId: str
     status: Optional[str] = "active"
     location: Optional[str]
+
+
+class ItemRead(ItemCreate):
     createdAt: datetime = None
     updatedAt: datetime = None
 

@@ -1,6 +1,9 @@
 import os
 from pydantic_settings import BaseSettings
 from pymongo import MongoClient
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
 
 
 class Settings(BaseSettings):
@@ -14,5 +17,11 @@ class Settings(BaseSettings):
 
 settings = Settings()
 client = MongoClient(settings.MONGO_URI)
-db = client.spartan_up 
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+)
+
+db = client.spartan_up
 items_collection = db.items

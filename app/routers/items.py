@@ -4,6 +4,14 @@ from app.config import items_collection
 from app.schemas.item_schema import list_serialize_items
 from bson import ObjectId
 from app.models.item_model import ItemRead, ItemFromDB
+from fastapi import File, UploadFile
+import cloudinary.uploader
+
+
+async def upload_image(image_data: bytes) -> str:
+    result = cloudinary.uploader.upload(image_data)
+    return result["secure_url"]
+
 
 router = APIRouter()
 
@@ -24,7 +32,13 @@ async def get_item(item_id: str):
 
 # TODO: make this a multipart request so that we can upload images.
 @router.post("/")
-async def create_item(item: ItemRead):
+async def create_item(item: ItemRead, files: List[UploadFile] = File(...)):
+    images = []
+    for file in files:
+        image_data = await file.read()
+        image_url = await upload_image(image_data)
+        images.append(image_url)
+    item.images = images
     items_collection.insert_one(item.model_dump())
 
 

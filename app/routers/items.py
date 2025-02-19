@@ -36,10 +36,9 @@ async def create_item(item: str = Form(...), files: List[UploadFile] = File(...)
         image_data = await file.read()
         image_url = await upload_image(image_data)
         images.append(image_url)
-        print("image uploaded", image_url)
+        print("image uploaded")
     item_data["images"] = images
     items_collection.insert_one(item_data)
-    print("item created", item_data)
     return {"message": "Item created successfully"}
 
 

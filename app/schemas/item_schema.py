@@ -16,8 +16,8 @@ def serialize_item(item: ItemFromDB) -> dict:
         "sellerId": str(item["sellerId"]),
         "status": item.get("status", "active"),
         "location": item.get("location", ""),
-        "createdAt": item["createdAt"].isoformat() if item["createdAt"] else None,
-        "updatedAt": item["updatedAt"].isoformat() if item["updatedAt"] else None,
+        "createdAt": item.get("createdAt"),
+        "updatedAt": item.get("updatedAt")
     }
 
 

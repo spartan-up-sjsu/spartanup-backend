@@ -15,8 +15,11 @@ router = APIRouter()
 
 @router.get("/")
 async def get_items():
-    items = list_serialize_items(items_collection.find())
-    return items
+    try: 
+        items = list_serialize_items(items_collection.find())
+        return {"message": "Items retrieved successfully", "data": items}
+    except: 
+        raise HTTPException(status_code=404, detail="Cannot retrieve items")
 
 
 @router.get("/{item_id}")
@@ -24,22 +27,27 @@ async def get_item(item_id: str):
     item = items_collection.find_one({"_id": ObjectId(item_id)})
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
-    return ItemRead(**item)
+    return {"message": "Item retrieved successfully", "data": item}
 
 
 @router.post("/")
 async def create_item(item: str = Form(...), files: List[UploadFile] = File(...)):
-    images = []
-    item_data = json.loads(item)
-    for file in files:
-        print("uploading image")
-        image_data = await file.read()
-        image_url = await upload_image(image_data)
-        images.append(image_url)
-        print("image uploaded")
-    item_data["images"] = images
-    items_collection.insert_one(item_data)
-    return {"message": "Item created successfully"}
+    try: 
+        images = []
+        item_data = json.loads(item)
+        for file in files:
+            print("uploading image")
+            image_data = await file.read()
+            image_url = await upload_image(image_data)
+            images.append(image_url)
+            print("image uploaded")
+        item_data["images"] = images
+        items_collection.insert_one(item_data)
+        return {"message": "Item created successfully"}
+    except json.JSONDecodeError as e: 
+        raise HTTPException(status_code=400, detail="Invalid JSON format") 
+    except: 
+        raise HTTPException(status_code=500, detail="Cannot create item")
 
 
 @router.put("/{item_id}")

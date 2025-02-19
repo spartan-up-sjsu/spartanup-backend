@@ -21,15 +21,18 @@ class Settings(BaseSettings):
 settings = Settings()
 client = MongoClient(settings.MONGO_URI)
 
-# Configure Cloudinary using URL if available, otherwise use individual credentials
-if settings.CLOUDINARY_URL:
-    cloudinary.config(cloud_name=settings.CLOUDINARY_URL)
-else:
-    cloudinary.config(
-        cloud_name=settings.CLOUDINARY_CLOUD_NAME,
-        api_key=settings.CLOUDINARY_API_KEY,
-        api_secret=settings.CLOUDINARY_API_SECRET,
-    )
+
+async def upload_image(image_data: bytes) -> str:
+    result = cloudinary.uploader.upload(image_data)
+    return result["secure_url"]
+
+
+cloudinary.config(
+    cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+    api_key=settings.CLOUDINARY_API_KEY,
+    api_secret=settings.CLOUDINARY_API_SECRET,
+)
+
 
 db = client.spartan_up
 items_collection = db.items

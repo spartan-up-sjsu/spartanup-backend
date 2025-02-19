@@ -1,16 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Form
 from typing import List
 from app.config import items_collection
 from app.schemas.item_schema import list_serialize_items
 from bson import ObjectId
 from app.models.item_model import ItemRead, ItemFromDB
 from fastapi import File, UploadFile
+from app.config import upload_image
 import cloudinary.uploader
-
-
-async def upload_image(image_data: bytes) -> str:
-    result = cloudinary.uploader.upload(image_data)
-    return result["secure_url"]
+import json
 
 
 router = APIRouter()
@@ -30,16 +27,19 @@ async def get_item(item_id: str):
     return ItemRead(**item)
 
 
-# TODO: make this a multipart request so that we can upload images.
 @router.post("/")
-async def create_item(item: ItemRead, files: List[UploadFile] = File(...)):
+async def create_item(item: str = Form(...), files: List[UploadFile] = File(...)):
     images = []
+    item_data = json.loads(item)
     for file in files:
+        print("uploading image")
         image_data = await file.read()
         image_url = await upload_image(image_data)
         images.append(image_url)
-    item.images = images
-    items_collection.insert_one(item.model_dump())
+        print("image uploaded")
+    item_data["images"] = images
+    items_collection.insert_one(item_data)
+    return {"message": "Item created successfully"}
 
 
 @router.put("/{item_id}")

@@ -22,6 +22,7 @@ async def get_item(item_id: str):
     return ItemRead(**item)
 
 
+# TODO: make this a multipart request so that we can upload images.
 @router.post("/")
 async def create_item(item: ItemRead):
     items_collection.insert_one(item.model_dump())

@@ -3,7 +3,7 @@ from app.routers import auth, users, items
 from app.config import Settings
 import dotenv
 from fastapi.responses import HTMLResponse
-
+import app.core.database
 
 dotenv.load_dotenv()
 

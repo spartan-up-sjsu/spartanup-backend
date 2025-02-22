@@ -5,6 +5,7 @@ import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 import certifi
+import logging
 
 
 class Settings(BaseSettings):
@@ -34,6 +35,11 @@ cloudinary.config(
     api_secret=settings.CLOUDINARY_API_SECRET,
 )
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("app")
 
 db = client.spartan_up
 items_collection = db.items

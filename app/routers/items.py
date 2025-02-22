@@ -6,17 +6,12 @@ from bson import ObjectId, errors
 from app.models.item_model import ItemRead, ItemFromDB
 from fastapi import File, UploadFile
 from app.config import upload_image
+from app.config import logger
 import cloudinary.uploader
 import json
-import logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
 
 @router.get("/")
 async def get_items():
@@ -55,7 +50,7 @@ async def create_item(item: str = Form(...), files: List[UploadFile] = File(...)
         images = []
         item_data = json.loads(item)
         for file in files:
-            logging.info("Uploading image to cloudinary")
+            logger.info("Uploading image to cloudinary")
             image_data = await file.read()
             image_url = await upload_image(image_data)
             images.append(image_url)

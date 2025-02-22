@@ -3,7 +3,7 @@ from typing import List
 from app.config import items_collection
 from app.schemas.item_schema import list_serialize_items
 from bson import ObjectId, errors
-from app.models.item_model import ItemRead, ItemFromDB
+from app.models.item_model import ItemRead, ItemFromDB, ItemCreate
 from fastapi import File, UploadFile
 from app.config import upload_image
 from app.config import logger
@@ -49,15 +49,17 @@ async def create_item(item: str = Form(...), files: List[UploadFile] = File(...)
         logger.info("Creating items")
         images = []
         item_data = json.loads(item)
+        validated_item = ItemCreate(**item_data)
         for file in files:
             logger.info("Uploading image to cloudinary")
             image_data = await file.read()
             image_url = await upload_image(image_data)
             images.append(image_url)
             logger.info("Image uploaded")
-        item_data["images"] = images
+        validated_item_dict = validated_item.model_dump()
+        validated_item_dict["images"] = images
         logger.info("Inserting item to mongodb")
-        items_collection.insert_one(item_data)
+        items_collection.insert_one(validated_item_dict)
         return {"message": "Item created successfully"}
     except json.JSONDecodeError as e: 
         logger.error("Invalid JSON format")
@@ -65,8 +67,7 @@ async def create_item(item: str = Form(...), files: List[UploadFile] = File(...)
     except:
         logger.error("Error creating item") 
         raise HTTPException(status_code=500, detail="Cannot create item")
-
-
+    
 @router.put("/{item_id}")
 async def update_item(item_id: str):
     # TODO: Implement update item

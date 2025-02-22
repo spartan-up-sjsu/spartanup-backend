@@ -7,7 +7,7 @@ from app.models.item_model import ItemFromDB
 def serialize_item(item: ItemFromDB) -> dict:
     return {
         "_id": str(item["_id"]),
-        "title": item["title"],
+        "title": item.get("title", ""),
         "description": item.get("description", ""),
         "images": [str(url) for url in item.get("images", [])],
         "price": item["price"],

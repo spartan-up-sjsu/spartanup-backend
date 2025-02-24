@@ -9,7 +9,7 @@ from app.config import upload_image
 from app.config import logger
 import cloudinary.uploader
 import json
-
+from typing import Optional
 
 router = APIRouter()
 
@@ -69,12 +69,47 @@ async def create_item(item: str = Form(...), files: List[UploadFile] = File(...)
         raise HTTPException(status_code=500, detail="Cannot create item")
     
 @router.put("/{item_id}")
-async def update_item(item_id: str):
-    # TODO: Implement update item
-    pass
+async def update_item(item_id: str, item: str = Form(...), files: Optional[List[UploadFile]] = File(None)):
+    try: 
+        logger.info(f"Updating item with ID: {item_id}")
+        existing_item = items_collection.find_one({"_id": ObjectId(item_id)})
+        if not existing_item:
+            logger.error("item not found")
+            raise HTTPException(status_code= 404, detail= "Item not found")
+        images = existing_item.get("images", [])
+        item_data = json.loads(item)
+        validated_item = ItemCreate(**item_data)
 
+        if files:
+            for file in files:
+                logger.info("Uploading new image to cloudinary")
+                image_data = await file.read()
+                image_url = await upload_image(image_data)
+                images.append(image_url)
+                logger.info("Image uploaded")
+        validated_item_dict = validated_item.model_dump()
+        validated_item_dict["images"] = images
+        items_collection.update_one(
+            {"_id": ObjectId(item_id)}, 
+            {"$set": validated_item_dict}
+        )
+        return {"message": "Item updated successfully"}
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON format")
+        raise HTTPException(status_code=400, detail="Invalid JSON format")
+    except Exception as e:
+        logger.error(f"Error updating item: {str(e)}")
+        raise HTTPException(status_code=500, detail="Cannot update item")
 
 @router.delete("/{item_id}")
 async def delete_item(item_id: str):
-    # TODO: Implement delete item
-    pass
+    try:
+        logger.info(f"Deleting item with ID: {item_id}")
+        result = items_collection.delete_one({"_id": ObjectId(item_id)})
+        if result.deleted_count == 0:
+            logger.error("Item not found")
+            raise HTTPException(status_code=404, detail="Item not found")
+        return {"message": "Item deleted successfully"}
+    except Exception as e:
+        logger.error(f"Error deleting item: {str(e)}")
+        raise HTTPException(status_code=500, detail="Cannot delete item")

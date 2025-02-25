@@ -1,34 +1,115 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Form
 from typing import List
+from app.config import items_collection
+from app.schemas.item_schema import list_serialize_items
+from bson import ObjectId, errors
+from app.models.item_model import ItemRead, ItemFromDB, ItemCreate
+from fastapi import File, UploadFile
+from app.config import upload_image
+from app.config import logger
+import cloudinary.uploader
+import json
+from typing import Optional
 
 router = APIRouter()
 
-
 @router.get("/")
 async def get_items():
-    # TODO: Implement get all items
-    return []
+    try: 
+        logger.info("Retrieving all items from mongodb")
+        items = list_serialize_items(items_collection.find())
+        return {"message": "Items retrieved successfully", "data": items}
+    except Exception as e: 
+        logger.error("Unable to retrieve items" + str(e))
+        raise HTTPException(status_code=404, detail="Cannot retrieve items")
 
-
-@router.get("/{item_id}")
+@router.get("/{item_id}") 
 async def get_item(item_id: str):
-    # TODO: Implement get single item
-    pass
+    try:
+        logger.info(f"Finding item in MongoDB with ID: {item_id}")
+        object_id = ObjectId(item_id) 
+        item = items_collection.find_one({"_id": object_id})
+        if item is None:
+            logger.error("Unable to find item")
+            raise HTTPException(status_code=404, detail="Item not found")
+        logger.info("Fetching item")
+        return {"message": "Item retrieved successfully", "data": item}
+    except errors.InvalidId: 
+        logger.error(f"Invalid ObjectId format: {item_id}")
+        raise HTTPException(status_code=400, detail="Invalid item ID format")
+    except Exception as e:
+        logger.error(f"Unexpected error retrieving item: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 
 @router.post("/")
-async def create_item():
-    # TODO: Implement create item
-    pass
-
-
+async def create_item(item: str = Form(...), files: List[UploadFile] = File(...)):
+    try: 
+        logger.info("Creating items")
+        images = []
+        item_data = json.loads(item)
+        validated_item = ItemCreate(**item_data)
+        for file in files:
+            logger.info("Uploading image to cloudinary")
+            image_data = await file.read()
+            image_url = await upload_image(image_data)
+            images.append(image_url)
+            logger.info("Image uploaded")
+        validated_item_dict = validated_item.model_dump()
+        validated_item_dict["images"] = images
+        logger.info("Inserting item to mongodb")
+        items_collection.insert_one(validated_item_dict)
+        return {"message": "Item created successfully"}
+    except json.JSONDecodeError as e: 
+        logger.error("Invalid JSON format")
+        raise HTTPException(status_code=400, detail="Invalid JSON format") 
+    except:
+        logger.error("Error creating item") 
+        raise HTTPException(status_code=500, detail="Cannot create item")
+    
 @router.put("/{item_id}")
-async def update_item(item_id: str):
-    # TODO: Implement update item
-    pass
+async def update_item(item_id: str, item: str = Form(...), files: Optional[List[UploadFile]] = File(None)):
+    try: 
+        logger.info(f"Updating item with ID: {item_id}")
+        existing_item = items_collection.find_one({"_id": ObjectId(item_id)})
+        if not existing_item:
+            logger.error("item not found")
+            raise HTTPException(status_code= 404, detail= "Item not found")
+        images = existing_item.get("images", [])
+        item_data = json.loads(item)
+        validated_item = ItemCreate(**item_data)
 
+        if files:
+            for file in files:
+                logger.info("Uploading new image to cloudinary")
+                image_data = await file.read()
+                image_url = await upload_image(image_data)
+                images.append(image_url)
+                logger.info("Image uploaded")
+        validated_item_dict = validated_item.model_dump()
+        validated_item_dict["images"] = images
+        items_collection.update_one(
+            {"_id": ObjectId(item_id)}, 
+            {"$set": validated_item_dict}
+        )
+        return {"message": "Item updated successfully"}
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON format")
+        raise HTTPException(status_code=400, detail="Invalid JSON format")
+    except Exception as e:
+        logger.error(f"Error updating item: {str(e)}")
+        raise HTTPException(status_code=500, detail="Cannot update item")
 
 @router.delete("/{item_id}")
 async def delete_item(item_id: str):
-    # TODO: Implement delete item
-    pass
+    try:
+        logger.info(f"Deleting item with ID: {item_id}")
+        result = items_collection.delete_one({"_id": ObjectId(item_id)})
+        if result.deleted_count == 0:
+            logger.error("Item not found")
+            raise HTTPException(status_code=404, detail="Item not found")
+        return {"message": "Item deleted successfully"}
+    except Exception as e:
+        logger.error(f"Error deleting item: {str(e)}")
+        raise HTTPException(status_code=500, detail="Cannot delete item")

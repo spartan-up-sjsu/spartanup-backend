@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     CLOUDINARY_CLOUD_NAME: str | None = os.getenv("CLOUDINARY_CLOUD_NAME")
     CLOUDINARY_API_KEY: str | None = os.getenv("CLOUDINARY_API_KEY")
     CLOUDINARY_API_SECRET: str | None = os.getenv("CLOUDINARY_API_SECRET")
+    GOOGLE_CLIENT_ID: str
+    GOOGLE_CLIENT_SECRET: str
+    GOOGLE_REDIRECT_URI: str
+   
 
     class Config:
         env_file = ".env"

@@ -1,5 +1,5 @@
 .env
-user_info,json
+user_info.json
 venv/
 *.pyc
 __pycache__/

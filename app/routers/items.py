@@ -64,8 +64,8 @@ async def create_item(item: str = Form(...), files: List[UploadFile] = File(...)
     except json.JSONDecodeError as e: 
         logger.error("Invalid JSON format")
         raise HTTPException(status_code=400, detail="Invalid JSON format") 
-    except:
-        logger.error("Error creating item") 
+    except Exception as e:
+        logger.error("Error creating item: " + str(e)) 
         raise HTTPException(status_code=500, detail="Cannot create item")
     
 @router.put("/{item_id}")

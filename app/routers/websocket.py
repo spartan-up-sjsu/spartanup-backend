@@ -32,7 +32,7 @@ class ConnectionManager:
             except ValueError:
                 pass 
 
-    async def send_message(self, conversation_id: str, message: dict):
+    async def send_message(self, conversation_id: str, content: str):
         disconnected_clients = []
         
         if conversation_id not in self.active_connections:
@@ -40,7 +40,7 @@ class ConnectionManager:
 
         for websocket in self.active_connections[conversation_id]:
             try:
-                await websocket.send_json(message)  
+                await websocket.send_text(content)  
             except Exception as e:
                 print(f"Failed to send message: {e}")
                 disconnected_clients.append(websocket)
@@ -117,8 +117,7 @@ async def websocket_chat(websocket: WebSocket, conversation_id: str, user_id: st
 
         while True:
             message_data = await websocket.receive_text()
-            message_json = json.loads(message_data)
-            content = message_json.get("content")
+            content = message_data.strip()
 
             message = {
                 "_id": str(ObjectId()),
@@ -129,7 +128,7 @@ async def websocket_chat(websocket: WebSocket, conversation_id: str, user_id: st
             }
             messages_collection.insert_one(message) 
 
-            await manager.send_message(conversation_id, message)
+            await manager.send_message(conversation_id, content)
 
     except WebSocketDisconnect:
         print(f"🔻 WebSocket disconnected for user: {user_id}")

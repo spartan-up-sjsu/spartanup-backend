@@ -48,3 +48,5 @@ logger = logging.getLogger("app")
 db = client.spartan_up
 items_collection = db.items
 user_collection = db.users
+conversations_collection = db.conversations
+messages_collection = db.messages

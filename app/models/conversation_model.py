@@ -1,7 +1,21 @@
 from pydantic import BaseModel
-from bson import ObjectId
+from bson import ObjectId as _ObjectId
 from typing import Literal
 from datetime import datetime
+from typing_extensions import Annotated
+from pydantic.functional_validators import AfterValidator
+
+def check_object_id(value: str) -> str:
+    if not _ObjectId.is_valid(value):
+        raise ValueError('Invalid ObjectId')
+    return value
+
+ObjectId = Annotated[str, AfterValidator(check_object_id)]
+
+class ChatRequest(BaseModel):
+    item_id: str
+    buyer_id: str
+    seller_id: str
 
 class Conversation(BaseModel):
     id: ObjectId

@@ -80,17 +80,49 @@ def google_callback(code: str = None):
             upsert=True
         )
 
-        # Create new JWT session
+        # Create new JWT sessios
         tokens = create_jwt_session(email)
-        return {
-            "message": "Logged in with Google successfully!",
-            **tokens
-        }
+
+
+
+
+        # Redirect directly to the marketplace on successful login.
+        front_end_callback_url = "http://localhost:3000/marketplace"
+        response = RedirectResponse(front_end_callback_url)
+
+    
+        # Set cookies for future requests)
+        response.set_cookie(
+            key="access_token",
+            value=tokens["access_token"],
+            httponly=True,
+            max_age=15 * 60,
+            samesite="lax"
+        )
+        response.set_cookie(
+            key="refresh_token",
+            value=tokens["refresh_token"],
+            httponly=True,
+            max_age=7 * 24 * 60 * 60,
+            samesite="lax"
+        )
+
+        return response
+        
+
+        # return {
+        #     "message": "Logged in with Google successfully!",
+        #     **tokens
+        # }
 
     except Exception as e:
         logger.error(f"OAuth error: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
+        front_end_callback_url = "http://localhost:3000/callback"
+        response = RedirectResponse(front_end_callback_url)
+        return response
+        #raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
+    
 
 @router.post("/refresh")
 async def refresh_token(refresh_token: str):

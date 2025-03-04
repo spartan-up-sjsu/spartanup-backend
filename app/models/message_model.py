@@ -16,7 +16,8 @@ class Message(BaseModel):
     id: ObjectId 
     content: str  
     sent_by: ObjectId
-    conversation_id: ObjectId 
+    conversation_id: ObjectId
+    event: str 
     created_at: datetime = datetime.utcnow()
     updated_at: datetime = datetime.utcnow()
 

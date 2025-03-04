@@ -6,6 +6,7 @@ router = APIRouter()
 
 active_connections = set()
 
+
 @router.websocket("/")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -16,25 +17,24 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await websocket.receive_text()
             message = json.loads(data)
             event = message.get("event")
-            conversation_id = message.get("conversation_id")
-            sent_by = message.get("sent_by")
-            content = message.get("content")
-            created_at = message.get("created_at")
+            payload = message.get("payload", {})
+            if (event == "chat"):
+                conversation_id = payload.get("conversation_id")
+                sent_by = payload.get("sent_by")
+                content = payload.get("content")
+                created_at = payload.get("created_at")
 
-            messages_collection.insert_one({
-                "event": event,
-                "conversation_id": conversation_id,
-                "sent_by": sent_by,
-                "content": content,
-                "created_at": created_at
-            })
+                messages_collection.insert_one({
+                    "event": event,
+                    "conversation_id": conversation_id,
+                    "sent_by": sent_by,
+                    "content": content,
+                    "created_at": created_at
+                })
 
             response = {
                 "event": event,
-                "conversation_id": conversation_id,
-                "sent_by": sent_by,
-                "content": content,
-                "created_at": created_at,
+                "payload": payload,
                 "message": f"Saved {event} event."
             }
 

@@ -19,9 +19,10 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=["http://localhost:3000"],  
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "HEAD", "OPTIONS"],
+        allow_headers=["Access-Control-Allow-Headers", 'Content-Type', 'Authorization', 'Access-Control-Allow-Origin'],
     )
+    
     @app.get("/", response_class=HTMLResponse)
     async def read_root():
         html_content = """

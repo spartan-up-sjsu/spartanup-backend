@@ -6,6 +6,8 @@ from authlib.integrations.requests_client import OAuth2Session
 import traceback
 from datetime import datetime
 from datetime import timezone   
+from fastapi.responses import JSONResponse
+
 
 router = APIRouter()
 
@@ -37,11 +39,12 @@ def google_login():
     )
     return RedirectResponse(uri)
 
+
+
 @router.get("/google/callback")
 def google_callback(code: str = None):
     if not code:
         raise HTTPException(status_code=400, detail="No code provided by Google OAuth.")
-
     logger.info("Exchange code for token")
     try:
         client = OAuth2Session(
@@ -82,38 +85,38 @@ def google_callback(code: str = None):
 
         # Create new JWT sessios
         tokens = create_jwt_session(email)
+        logger.info("Login successful")
 
 
+        # response = JSONResponse({
+        #     "message": "Logged in with Google successfully!",
+        #     "tokens": tokens  # Optional: you may not want to expose tokens in production
+        # })
 
-
-        # Redirect directly to the marketplace on successful login.
-        front_end_callback_url = "http://localhost:3000/marketplace"
-        response = RedirectResponse(front_end_callback_url)
-
-    
         # Set cookies for future requests)
         response.set_cookie(
             key="access_token",
-            value=tokens["access_token"],
+            value= tokens["access_token"],
             httponly=True,
-            max_age=15 * 60,
-            samesite="lax"
+            #secure=True,
+            max_age= 60*10,
+            samesite="lax",
+            domain="localhost"
         )
+
         response.set_cookie(
             key="refresh_token",
             value=tokens["refresh_token"],
             httponly=True,
+            secure=False,  
             max_age=7 * 24 * 60 * 60,
-            samesite="lax"
+            samesite="lax",
+            domain="localhost"
         )
 
-        return response
-        
 
-        # return {
-        #     "message": "Logged in with Google successfully!",
-        #     **tokens
-        # }
+        return response
+
 
     except Exception as e:
         logger.error(f"OAuth error: {str(e)}")
@@ -121,7 +124,7 @@ def google_callback(code: str = None):
         front_end_callback_url = "http://localhost:3000/callback"
         response = RedirectResponse(front_end_callback_url)
         return response
-        #raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
+
     
 
 @router.post("/refresh")

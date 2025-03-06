@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from app.core import security
+from fastapi.responses import JSONResponse
 from fastapi.responses import RedirectResponse
 from ..config import logger, user_collection, settings
 from authlib.integrations.requests_client import OAuth2Session
@@ -7,6 +8,7 @@ import traceback
 from datetime import datetime
 from datetime import timezone   
 from fastapi.responses import JSONResponse
+from fastapi import Request
 
 
 router = APIRouter()
@@ -38,8 +40,6 @@ def google_login():
         access_type='offline'
     )
     return RedirectResponse(uri)
-
-
 
 @router.get("/google/callback")
 def google_callback(code: str = None):
@@ -76,30 +76,23 @@ def google_callback(code: str = None):
             "updated_at": datetime.now(timezone.utc)
         }
         
-        # Upsert user data
+
         user_collection.update_one(
             {"email": email},
             {"$set": user_data},
             upsert=True
         )
 
-        # Create new JWT sessios
+        front_end_callback_url = "http://localhost:3000/callback"
+        response = RedirectResponse(front_end_callback_url)
+
         tokens = create_jwt_session(email)
-        logger.info("Login successful")
-
-
-        # response = JSONResponse({
-        #     "message": "Logged in with Google successfully!",
-        #     "tokens": tokens  # Optional: you may not want to expose tokens in production
-        # })
-
-        # Set cookies for future requests)
         response.set_cookie(
             key="access_token",
             value= tokens["access_token"],
             httponly=True,
-            #secure=True,
-            max_age= 60*10,
+            secure= False,
+            max_age= 2*10,
             samesite="lax",
             domain="localhost"
         )
@@ -125,22 +118,50 @@ def google_callback(code: str = None):
         response = RedirectResponse(front_end_callback_url)
         return response
 
+
+@router.post("/signout", tags=["Auth"])
+async def signout():
+    response = JSONResponse ({"message": "Signout Successfully"})
+    response.delete_cookie("access_token", domain="localhost", path="/")
+    response.delete_cookie("refresh_token", domain="localhost", path="/")
+    return response 
     
 
-@router.post("/refresh")
-async def refresh_token(refresh_token: str):
+@router.post("/refresh", tags=["Auth"])
+async def refresh_token(request: Request):
+    refresh_token = request.cookies.get("refresh_token")
+    logger.info(f"Received refresh token from cookie: {refresh_token}")
+    
+
+    if not refresh_token:
+        logger.error("No refresh token found in cookies")
+        raise HTTPException(status_code=401, detail="Refresh token missing")
     try:
         email = security.verify_refresh_token(refresh_token)
+        logger.info(f"Email extracted from refresh token: {email}")
         if not email:
+            logger.error("Refresh token verification failed: email is None")
             raise HTTPException(status_code=401, detail="Invalid refresh token")
             
-        # Verify user exists in database
         user = user_collection.find_one({"email": email})
+        logger.info(f"User lookup result for {email}: {user}")
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
             
-        # Create new JWT session
-        return create_jwt_session(email)
+
+        new_access_tokens = create_jwt_session(email)
+        logger.info(f"New tokens created for {email}: {new_access_tokens}")
+        response = JSONResponse({"message": "Access token refreshed successfully"})
+        response.set_cookie(
+            key="access_token",
+            value= new_access_tokens["access_token"],
+            httponly=True,
+            secure= False,
+            max_age= 60*2,
+            samesite="lax",
+            domain="localhost"
+        )
+        return response
         
     except Exception as e:
         logger.error(f"Refresh token error: {str(e)}")

@@ -80,7 +80,7 @@ def verify_token(token: str, token_type: str = None):
             logger.error("Token has expired")
             return None
             
-        # Verify token type if specified
+
         if token_type and payload.get("type") != token_type:
             logger.error(f"Token type mismatch: expected {token_type}, got {payload.get('type')}")
             return None

@@ -1,5 +1,0 @@
- {"event": "chat",
-            "conversation_id": "67c4b7c6cafb28921e48761d",
-            "sent_by": "60b8d295f1b2c3d4e8f8e8f9",
-            "content": "hello",
-            "created_at": datetime.utcnow().isoformat()},

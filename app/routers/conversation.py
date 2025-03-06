@@ -1,9 +1,14 @@
 from fastapi import APIRouter, HTTPException, Form
 from bson import ObjectId, errors
 from app.config import logger
-from app.config import conversations_collection, items_collection
+from app.config import conversations_collection, items_collection, messages_collection
 from typing import Optional
 import json
+from app.models.conversation_model import Conversation
+from app.models.message_model import Message
+from app.schemas.conversation_schema import list_serialize_conversations, serialize_conversation
+from datetime import datetime
+from app.websocket_manager import ws_manager
 
 router = APIRouter()
 
@@ -16,14 +21,25 @@ async def create_conversation(item_id: str = Form(...), buyer_id: str = Form(...
         if item is None:
             logger.error("Item not found")
             raise HTTPException(status_code=404, detail="Item not found")
+
         conversation = Conversation(
-            item_id=ObjectId(item_id),
-            seller_id=ObjectId(item["seller_id"]),
-            buyer_id=ObjectId(buyer_id)
+        item_id=ObjectId(item_id),  
+        seller_id=ObjectId(item["seller_id"]), 
+        buyer_id=ObjectId(buyer_id)
         )
-        conversations_collection.insert_one(conversation.dict())
-        #this is where you send the notification to the buyer, use the websocket to do it.
-        return conversation
+        inserted_conversation = conversations_collection.insert_one(conversation.dict())
+
+        conversation_id = str(inserted_conversation.inserted_id)
+
+        await ws_manager.send_message(buyer_id, {
+            "type": "notification",
+            "message": "New conversation started",
+            "conversation_id": str(conversation_id),  
+            "item_id": str(conversation.item_id),  
+            "seller_id": str(conversation.seller_id),  
+            "created_at": datetime.utcnow().isoformat()
+        })
+        return {"message": "Conversation created", "conversation_id": conversation_id}
     except json.JSONDecodeError as e: 
         logger.error("Invalid JSON format")
         raise HTTPException(status_code=400, detail="Invalid JSON format") 
@@ -34,30 +50,36 @@ async def create_conversation(item_id: str = Form(...), buyer_id: str = Form(...
 
 #this function sends a message to a conversation
 @router.post("/{conversation_id}")
-async def send_message(conversation_id: str, message: str = Form(...)):
+async def send_message(conversation_id: str,  sender_id: str = Form(...), message: str = Form(...)):
     try:
         logger.info(f"Sending message to conversation with ID: {conversation_id}")
         conversation = conversations_collection.find_one({"_id": ObjectId(conversation_id)})
         if conversation is None:
             logger.error("Conversation not found")
             raise HTTPException(status_code=404, detail="Conversation not found")
+        
+        sender_id = ObjectId(sender_id)
+        recipient_id = (
+            (conversation["seller_id"])
+            if sender_id == conversation["buyer_id"]
+            else str(conversation["buyer_id"])
+        )
         message = Message(
             conversation_id=ObjectId(conversation_id),
-            sender_id=ObjectId(conversation["buyer_id"]),
+            sender_id=sender_id,
             message=message
         )
         messages_collection.insert_one(message.dict())
         #this is where the notification should go, using websockets example json payload here with multiplexing in mine:
-        """
-            {
-                "type": "message", // type of update
-                "data": { // data of the update
-                    "conversation_id": str(message.conversation_id),
-                    "sender_id": str(message.sender_id),
-                    "message": message.message
-                }
+        notification_payload = {
+            "type": "message",
+            "data": {
+                "conversation_id": str(message.conversation_id),
+                "sender_id": str(message.sender_id),
+                "message": message.message
             }
-        """
+        }
+        await ws_manager.send_message(recipient_id, notification_payload)
         return {"message": "Message sent successfully"}
     except errors.InvalidId:
         logger.error("Invalid conversation ID format")
@@ -68,7 +90,7 @@ async def send_message(conversation_id: str, message: str = Form(...)):
 async def get_conversations():
     try: 
         logger.info("Retrieving all conversations from mongodb")
-        conversations = list_serialize_conversations(conversations_collection.find())
+        conversations= list_serialize_conversations(conversations_collection.find())
         return {"message": "Conversations retrieved successfully", "data": conversations}
     except Exception as e: 
         logger.error("Unable to retrieve conversations" + str(e))
@@ -85,15 +107,14 @@ async def get_conversation(conversation_id: str):
         if conversation is None:
             logger.error("Unable to find conversation")
             raise HTTPException(status_code=404, detail="Conversation not found")
-        
-        # Retrieve relevant messages
+        serialized_conversation = serialize_conversation(conversation)
         messages = list(messages_collection.find({"conversation_id": object_id}))
         
         logger.info("Fetching conversation with messages")
         return {
             "message": "Conversation and messages retrieved successfully",
             "data": {
-                "conversation": conversation,
+                "conversation": serialized_conversation,
                 "messages": messages
             }
         }

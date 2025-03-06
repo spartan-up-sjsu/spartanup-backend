@@ -20,14 +20,14 @@ class ItemCreate(BaseModel):
     price: float
     condition: str
     category: str
-    sellerId: ObjectId
+    seller_id: ObjectId
     status: Optional[str] = "active"
     location: Optional[str]
 
 
 class ItemRead(ItemCreate):
-    createdAt: datetime = None
-    updatedAt: datetime = None
+    created_at: datetime = None
+    updated_at: datetime = None
 
 
 class ItemFromDB(ItemRead):

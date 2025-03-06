@@ -13,11 +13,9 @@ ObjectId = Annotated[str, AfterValidator(check_object_id)]
 
 
 class Message(BaseModel):
-    id: ObjectId 
-    content: str  
-    sent_by: ObjectId
-    conversation_id: ObjectId
-    event: str 
+    message: str  
+    sender_id: ObjectId
+    conversation_id: ObjectId 
     created_at: datetime = datetime.utcnow()
     updated_at: datetime = datetime.utcnow()
 

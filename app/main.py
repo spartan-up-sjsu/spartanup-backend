@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import auth, users, items, websocket
+from app.routers import auth, users, items, websocket, conversation
 from app.config import Settings
 import dotenv
 from fastapi.responses import HTMLResponse
@@ -13,6 +13,7 @@ def create_app() -> FastAPI:
     app.include_router(users.router, prefix="/users", tags=["Users"])
     app.include_router(items.router, prefix="/items", tags=["Items"])
     app.include_router(websocket.router, prefix = "/ws", tags=["ws"])
+    app.include_router(conversation.router, prefix="/convo", tags=["convo"])
 
     @app.get("/", response_class=HTMLResponse)
     async def read_root():

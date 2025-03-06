@@ -7,6 +7,7 @@ import json
 from app.models.conversation_model import Conversation
 from app.models.message_model import Message
 from app.schemas.conversation_schema import list_serialize_conversations, serialize_conversation
+from app.schemas.message_schema import list_serialize_messages
 from datetime import datetime
 from app.websocket_manager import ws_manager
 
@@ -23,11 +24,16 @@ async def create_conversation(item_id: str = Form(...), buyer_id: str = Form(...
             raise HTTPException(status_code=404, detail="Item not found")
 
         conversation = Conversation(
-        item_id=ObjectId(item_id),  
-        seller_id=ObjectId(item["seller_id"]), 
-        buyer_id=ObjectId(buyer_id)
+        item_id=str(item_id),  
+        seller_id=str(item["seller_id"]), 
+        buyer_id=str(buyer_id)
         )
-        inserted_conversation = conversations_collection.insert_one(conversation.dict())
+
+        conversation_data = conversation.model_dump()
+        conversation_data["item_id"] = ObjectId(conversation_data["item_id"])
+        conversation_data["seller_id"] = ObjectId(conversation_data["seller_id"])
+        conversation_data["buyer_id"] = ObjectId(conversation_data["buyer_id"])
+        inserted_conversation = conversations_collection.insert_one(conversation_data)
 
         conversation_id = str(inserted_conversation.inserted_id)
 
@@ -65,11 +71,17 @@ async def send_message(conversation_id: str,  sender_id: str = Form(...), messag
             else str(conversation["buyer_id"])
         )
         message = Message(
-            conversation_id=ObjectId(conversation_id),
-            sender_id=sender_id,
+            conversation_id=conversation_id,  # This will stay a string for validation
+            sender_id=str(sender_id),  # This will stay a string for validation
             message=message
         )
-        messages_collection.insert_one(message.dict())
+
+        # Insert the message into MongoDB with ObjectId
+        message_data = message.dict()
+        message_data["conversation_id"] = ObjectId(message_data["conversation_id"])  # Convert to ObjectId for MongoDB
+        message_data["sender_id"] = ObjectId(message_data["sender_id"])  # Convert to ObjectId for MongoDB
+
+        messages_collection.insert_one(message_data)
         #this is where the notification should go, using websockets example json payload here with multiplexing in mine:
         notification_payload = {
             "type": "message",
@@ -109,13 +121,14 @@ async def get_conversation(conversation_id: str):
             raise HTTPException(status_code=404, detail="Conversation not found")
         serialized_conversation = serialize_conversation(conversation)
         messages = list(messages_collection.find({"conversation_id": object_id}))
+        serialized_messages = list_serialize_messages(messages)
         
         logger.info("Fetching conversation with messages")
         return {
             "message": "Conversation and messages retrieved successfully",
             "data": {
                 "conversation": serialized_conversation,
-                "messages": messages
+                "messages": serialized_messages
             }
         }
     except errors.InvalidId:

@@ -127,42 +127,40 @@ async def signout():
     return response 
     
 
-@router.post("/refresh", tags=["Auth"])
+@router.get("/refresh", tags=["Auth"])
 async def refresh_token(request: Request):
     refresh_token = request.cookies.get("refresh_token")
-    logger.info(f"Received refresh token from cookie: {refresh_token}")
+    old_access_token = request.cookies.get("access_token")
     
 
     if not refresh_token:
-        logger.error("No refresh token found in cookies")
         raise HTTPException(status_code=401, detail="Refresh token missing")
     try:
         email = security.verify_refresh_token(refresh_token)
-        logger.info(f"Email extracted from refresh token: {email}")
         if not email:
-            logger.error("Refresh token verification failed: email is None")
             raise HTTPException(status_code=401, detail="Invalid refresh token")
             
         user = user_collection.find_one({"email": email})
-        logger.info(f"User lookup result for {email}: {user}")
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
             
+        new_access_tokens = security.create_access_token(email)
 
-        new_access_tokens = create_jwt_session(email)
-        logger.info(f"New tokens created for {email}: {new_access_tokens}")
         response = JSONResponse({"message": "Access token refreshed successfully"})
         response.set_cookie(
             key="access_token",
-            value= new_access_tokens["access_token"],
+            value= new_access_tokens,
             httponly=True,
-            secure= False,
-            max_age= 60*2,
-            samesite="lax",
-            domain="localhost"
+            secure= True,
+            max_age= 2*10,
+            samesite="none",
         )
+
         return response
         
     except Exception as e:
         logger.error(f"Refresh token error: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+
+

@@ -64,12 +64,11 @@ async def send_message(conversation_id: str,  sender_id: str = Form(...), messag
             logger.error("Conversation not found")
             raise HTTPException(status_code=404, detail="Conversation not found")
         
-        sender_id = ObjectId(sender_id)
         recipient_id = (
-            (conversation["seller_id"])
-            if sender_id == conversation["buyer_id"]
-            else str(conversation["buyer_id"])
+            str(conversation["seller_id"]) if sender_id
+             == str(conversation["buyer_id"]) else str(conversation["buyer_id"])
         )
+        sender_id = ObjectId(sender_id)
         message = Message(
             conversation_id=conversation_id,  # This will stay a string for validation
             sender_id=str(sender_id),  # This will stay a string for validation

@@ -26,7 +26,7 @@ async def read_current_user(request: Request):
 
 @router.get("/", response_model=List[UserRead])
 async def get_users():
-    # TODO: Implement get all users
+    # TODO: 
     return []
 
 

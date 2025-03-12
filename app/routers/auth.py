@@ -92,7 +92,7 @@ def google_callback(code: str = None):
             value= tokens["access_token"],
             httponly=True,
             secure= False,
-            max_age= 2*10,
+            max_age= 604800, #expire in 7 days
             samesite="lax",
             domain="localhost"
         )
@@ -102,7 +102,7 @@ def google_callback(code: str = None):
             value=tokens["refresh_token"],
             httponly=True,
             secure=False,  
-            max_age=7 * 24 * 60 * 60,
+            max_age= 10 * 365 * 24 * 60 * 60, #expire in 10 years
             samesite="lax",
             domain="localhost"
         )

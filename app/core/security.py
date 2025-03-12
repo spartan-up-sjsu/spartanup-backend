@@ -60,12 +60,12 @@ def create_access_token(email: str, expires_delta: int = 60) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=expires_delta)
     payload = {
         "sub": email,
-        "exp": expire.timestamp(),  # Store expiration as a UNIX timestamp
+        "exp": expire.timestamp(),  
         "type": "access"
     }
     return encrypt_payload(payload)
 
-# Create a refresh token that expires after 7 days by default.
+
 def create_refresh_token(email: str, expires_delta: int = 60 * 24 * 7) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=expires_delta)
     payload = {
@@ -75,7 +75,7 @@ def create_refresh_token(email: str, expires_delta: int = 60 * 24 * 7) -> str:
     }
     return encrypt_payload(payload)
 
-# Verify the token by decrypting it and checking the expiration and token type.
+
 def verify_token(token: str, token_type: str = None) -> str:
     try:
         payload = decrypt_payload(token)

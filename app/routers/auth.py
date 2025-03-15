@@ -75,12 +75,13 @@ def google_callback(code: str = None):
             "last_login": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc)
         }
-        
         user_record = user_collection.find_one({"email": email})
-        if not user_record or "_id" not in user_record:
-            raise HTTPException(status_code=500, detail="User record not found")
-
-        user_id = str(user_record["_id"])
+        if not user_record:
+            new_user = user_data.copy()  
+            new_user["_id"] = user_collection.insert_one(user_data).inserted_id 
+            user_id = str(new_user["_id"])
+        else:
+            user_id = str(user_record["_id"])
 
         user_collection.update_one(
             {"email": email},

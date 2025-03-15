@@ -19,13 +19,18 @@ async def read_current_user(request: Request):
         user = user_collection.find_one({"_id": ObjectId(user_id)})
         if user:
             user["_id"] = str(user["_id"])
-        items = items_collection.find_one({"seller_id": ObjectId(user_id)})
+        items = items_collection.find({"seller_id": ObjectId(user_id)})
+        items_list = []
+        for item in items:
+            item["_id"] = str(item["_id"])
+            item["seller_id"] = str(item["seller_id"])
+            items_list.append(item)
     except Exception as e:
         logger.error(f"Token verification error: {str(e)}")
         raise HTTPException(status_code=500, detail="Token verification failed")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
-    return {"user": user, "items": items} 
+    return {"user": user, "items_list": items_list} 
 
 
 

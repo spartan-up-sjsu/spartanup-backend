@@ -14,38 +14,32 @@ def get_secret_key() -> str:
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
-        salt=b"spartanup_static_salt",  # Fixed salt for consistency
+        salt=b"spartanup_static_salt", 
         iterations=480000,
     )
     key = base64.urlsafe_b64encode(kdf.derive(settings.SECRET_KEY.encode()))
-    return key.decode()  # Return as a string
+    return key.decode() 
 
 # Create a Fernet instance for encryption/decryption.
 def get_fernet_key() -> Fernet:
-    # We use the same derived key (as bytes) for Fernet.
     secret_str = get_secret_key()  # This is a string.
-    secret_bytes = secret_str.encode("utf-8")  # Convert to bytes.
-    # Use the same key for Fernet (Fernet expects a base64-encoded 32-byte key)
+    secret_bytes = secret_str.encode("utf-8")  
     return Fernet(secret_bytes)
 
-# This function signs the payload with JWT and then encrypts the resulting token using Fernet.
+# signs the payload with JWT and then encrypts the resulting token using Fernet.
 def encrypt_payload(payload: dict) -> str:
     secret = get_secret_key()
-    # Sign the payload with HS256.
     token = jwt.encode(payload, secret, algorithm="HS256")
-    # Ensure token is a string.
     if isinstance(token, bytes):
         token = token.decode("utf-8")
-    # Now encrypt the JWT token using Fernet.
     f = get_fernet_key()
     encrypted = f.encrypt(token.encode("utf-8"))
     return encrypted.decode("utf-8")
 
-# This function decrypts the token using Fernet and then decodes the JWT to get the payload dictionary.
+# decrypts the token using Fernet and then decodes the JWT to get the payload dictionary.
 def decrypt_payload(token: str) -> dict:
     f = get_fernet_key()
     try:
-        # Decrypt the token and decode it to a UTF-8 string.
         decrypted_token = f.decrypt(token.encode("utf-8")).decode("utf-8")
         secret = get_secret_key()
         payload = jwt.decode(decrypted_token, secret, algorithms=["HS256"])
@@ -56,20 +50,20 @@ def decrypt_payload(token: str) -> dict:
 
 
 # Create an access token that expires after 'expires_delta' minutes.
-def create_access_token(email: str, expires_delta: int = 60) -> str:
+def create_access_token(user_id: str, expires_delta: int = 60) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=expires_delta)
     payload = {
-        "sub": email,
-        "exp": expire.timestamp(),  # Store expiration as a UNIX timestamp
+        "sub": user_id,
+        "exp": expire.timestamp(), 
         "type": "access"
     }
     return encrypt_payload(payload)
 
 # Create a refresh token that expires after 7 days by default.
-def create_refresh_token(email: str, expires_delta: int = 60 * 24 * 7) -> str:
+def create_refresh_token(user_id: str, expires_delta: int = 60 * 24 * 7) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=expires_delta)
     payload = {
-        "sub": email,
+        "sub": user_id,
         "exp": expire.timestamp(),
         "type": "refresh"
     }

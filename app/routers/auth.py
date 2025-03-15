@@ -16,10 +16,10 @@ router = APIRouter()
 GOOGLE_CONF_URL = 'https://accounts.google.com/.well-known/openid-configuration'
 GOOGLE_SCOPES = ['openid', 'email', 'profile']
 
-def create_jwt_session(email: str) -> dict:
+def create_jwt_session(user_id: str) -> dict:
     """Create a new JWT session with both access and refresh tokens"""
-    access_token = security.create_access_token(email)
-    refresh_token = security.create_refresh_token(email)
+    access_token = security.create_access_token(user_id)
+    refresh_token = security.create_refresh_token(user_id)
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
@@ -76,6 +76,11 @@ def google_callback(code: str = None):
             "updated_at": datetime.now(timezone.utc)
         }
         
+        user_record = user_collection.find_one({"email": email})
+        if not user_record or "_id" not in user_record:
+            raise HTTPException(status_code=500, detail="User record not found")
+
+        user_id = str(user_record["_id"])
 
         user_collection.update_one(
             {"email": email},
@@ -86,13 +91,14 @@ def google_callback(code: str = None):
         front_end_callback_url = "http://localhost:3000/callback"
         response = RedirectResponse(front_end_callback_url)
 
-        tokens = create_jwt_session(email)
+        tokens = create_jwt_session(user_id)
+
         response.set_cookie(
             key="access_token",
             value= tokens["access_token"],
             httponly=True,
             secure= False,
-            max_age= 2*10,
+            max_age= 60*60*24*7,
             samesite="lax",
             domain="localhost"
         )
@@ -102,7 +108,7 @@ def google_callback(code: str = None):
             value=tokens["refresh_token"],
             httponly=True,
             secure=False,  
-            max_age=7 * 24 * 60 * 60,
+            max_age= 365 * 7* 24 * 60 * 60,
             samesite="lax",
             domain="localhost"
         )
@@ -127,7 +133,7 @@ async def signout():
     return response 
     
 
-@router.get("/refresh", tags=["Auth"])
+@router.post("/refresh", tags=["Auth"])
 async def refresh_token(request: Request):
     refresh_token = request.cookies.get("refresh_token")
     old_access_token = request.cookies.get("access_token")
@@ -136,15 +142,15 @@ async def refresh_token(request: Request):
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token missing")
     try:
-        email = security.verify_refresh_token(refresh_token)
-        if not email:
+        user_id = security.verify_refresh_token(refresh_token)
+        if not user_id:
             raise HTTPException(status_code=401, detail="Invalid refresh token")
             
-        user = user_collection.find_one({"email": email})
+        user = user_collection.find_one({"user_id": user_id})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
             
-        new_access_tokens = security.create_access_token(email)
+        new_access_tokens = security.create_access_token(user_id)
 
         response = JSONResponse({"message": "Access token refreshed successfully"})
         response.set_cookie(

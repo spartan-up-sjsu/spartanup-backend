@@ -14,7 +14,6 @@ def create_app() -> FastAPI:
     app.include_router(users.router, prefix="/users", tags=["Users"])
     app.include_router(items.router, prefix="/items", tags=["Items"])
     app.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace"])
-    # app.include_router(test.router, prefix="", tags=["Test"])
 
 
     app.add_middleware(

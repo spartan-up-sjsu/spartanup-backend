@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends
-from app.routers.dependencies import get_current_user  # adjust the import path as needed
+# in app/routers/marketplace.py
+from fastapi import APIRouter
 
 router = APIRouter()
 
-@router.get("/")
-def read_marketplace(current_user: str = Depends(get_current_user)):
-    return {"message": f"Welcome to the marketplace, {current_user}"}
+@router.get("/", tags=["Marketplace"])
+async def get_marketplace():
+    return {"message": "Marketplace data"}

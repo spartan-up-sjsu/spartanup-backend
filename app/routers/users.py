@@ -14,14 +14,15 @@ async def read_current_user(request: Request):
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        user_email = verify_access_token(token)
+        user_id = verify_access_token(token)
 
     except Exception as e:
         logger.error(f"Token verification error: {str(e)}")
         raise HTTPException(status_code=500, detail="Token verification failed")
-    if not user_email:
+    if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
-    return {"email": user_email} #
+    return {"user_id": user_id + "email": email} #
+
 
 
 @router.get("/", response_model=List[UserRead])

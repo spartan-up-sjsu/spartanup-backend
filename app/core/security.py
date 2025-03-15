@@ -61,6 +61,7 @@ def create_access_token(user_id: str, expires_delta: int = 60) -> str:
 
 # Create a refresh token that expires after 7 days by default.
 def create_refresh_token(user_id: str, expires_delta: int = 60 * 24 * 7) -> str:
+
     expire = datetime.now(timezone.utc) + timedelta(minutes=expires_delta)
     payload = {
         "sub": user_id,
@@ -69,7 +70,7 @@ def create_refresh_token(user_id: str, expires_delta: int = 60 * 24 * 7) -> str:
     }
     return encrypt_payload(payload)
 
-# Verify the token by decrypting it and checking the expiration and token type.
+
 def verify_token(token: str, token_type: str = None) -> str:
     try:
         payload = decrypt_payload(token)

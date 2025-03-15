@@ -108,7 +108,7 @@ def google_callback(code: str = None):
             value=tokens["refresh_token"],
             httponly=True,
             secure=False,  
-            max_age= 365 * 7* 24 * 60 * 60,
+            max_age= 10 * 365 * 24 * 60 * 60, #expire in 10 years
             samesite="lax",
             domain="localhost"
         )

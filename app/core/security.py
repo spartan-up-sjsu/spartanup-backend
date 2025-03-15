@@ -62,6 +62,7 @@ def create_access_token(user_id: str, expires_delta: int = 60) -> str:
 # Create a refresh token that expires after 7 days by default.
 def create_refresh_token(user_id: str, expires_delta: int = 60 * 24 * 7) -> str:
 
+
     expire = datetime.now(timezone.utc) + timedelta(minutes=expires_delta)
     payload = {
         "sub": user_id,

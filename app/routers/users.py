@@ -21,13 +21,13 @@ async def read_current_user(request: Request):
         raise HTTPException(status_code=500, detail="Token verification failed")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
-    return {"user_id": user_id + "email": email} #
+    return {"user_id": user_id} 
 
 
 
 @router.get("/", response_model=List[UserRead])
 async def get_users():
-    # TODO: Implement get all users
+    # TODO: 
     return []
 
 

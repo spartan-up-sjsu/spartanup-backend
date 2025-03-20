@@ -73,7 +73,8 @@ def google_callback(code: str = None):
             "picture": user_info.get("picture"),
             "google_refresh_token": token.get("refresh_token"),  # Store Google's refresh token
             "last_login": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc)
+            "updated_at": datetime.now(timezone.utc),
+            "is_admin": False
         }
         user_record = user_collection.find_one({"email": email})
         if not user_record:

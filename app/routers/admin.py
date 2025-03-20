@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
-from app.config import user_collection, report_collection, items_collection
+from app.config import user_collection, reports_collection, items_collection
 from bson import ObjectId
 from app.core.security import verify_access_token
 
@@ -19,7 +19,7 @@ async def checkRole(request: Request):
 
 @router.get("/reported_items")
 async def get_reported_items(admin_check: bool = Depends(checkRole)): 
-    reported_items = report_collection.find({"status": "pending"})
+    reported_items = reports_collection.find({"status": "pending"})
     reported_items_list = [
         {**post, "_id": str(post["_id"]), "entity_id": str(post["entity_id"]), "reported_by": str(post["reported_by"])}
         for post in reported_items
@@ -39,7 +39,7 @@ async def delete_reported_items(entity_id: str, type: str, admin_check: bool = D
         if deleted_item.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Post not found")
 
-    report_collection.update_many(
+    reports_collection.update_many(
         {"entity_id": obj_id},
         {"$set": {"status": "resolved"}}
     )

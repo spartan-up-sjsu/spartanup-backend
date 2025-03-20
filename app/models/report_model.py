@@ -7,5 +7,6 @@ class Report(BaseModel):
     entity_id: str
     reported_by: str
     reason: str
+    type: str
     reported_at: datetime = Field(default_factory=datetime.utcnow) 
-    status: Optional[str] = "pending"
+    status: str = Field(default="pending") 

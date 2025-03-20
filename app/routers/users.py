@@ -1,13 +1,33 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
+from app.config import logger
 from ..models.user_model import UserCreate, UserRead
+from fastapi import Request
+from app.core.security import verify_access_token
+
 
 router = APIRouter()
+
+@router.get("/@me")
+async def read_current_user(request: Request):
+    token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        user_id = verify_access_token(token)
+
+    except Exception as e:
+        logger.error(f"Token verification error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Token verification failed")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return {"user_id": user_id} 
+
 
 
 @router.get("/", response_model=List[UserRead])
 async def get_users():
-    # TODO: Implement get all users
+    # TODO: 
     return []
 
 

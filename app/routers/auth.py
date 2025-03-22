@@ -1,20 +1,23 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from app.core import security
 from fastapi.responses import JSONResponse
 from fastapi.responses import RedirectResponse
-from ..config import logger, user_collection, settings
+from ..config import logger, user_collection,cookies_collection, settings
 from authlib.integrations.requests_client import OAuth2Session
 import traceback
 from datetime import datetime
 from datetime import timezone   
 from fastapi.responses import JSONResponse
 from fastapi import Request
+from bson import ObjectId
+from datetime import datetime, timezone
 
 
 router = APIRouter()
 
 GOOGLE_CONF_URL = 'https://accounts.google.com/.well-known/openid-configuration'
 GOOGLE_SCOPES = ['openid', 'email', 'profile']
+callBackURL = settings.FRONTEND_CALLBACK_URL
 
 def create_jwt_session(user_id: str) -> dict:
     """Create a new JWT session with both access and refresh tokens"""
@@ -58,7 +61,7 @@ def google_callback(code: str = None):
             grant_type='authorization_code'
         )
         
-        # Fetch user info
+
         resp = client.get('https://www.googleapis.com/oauth2/v2/userinfo')
         user_info = resp.json()
         
@@ -66,12 +69,12 @@ def google_callback(code: str = None):
         if not email or not email.endswith(".edu"):
             raise HTTPException(status_code=401, detail="Access denied, user not an edu email")
         
-        # Store or update user in database
+
         user_data = {
             "email": email,
             "name": user_info.get("name"),
             "picture": user_info.get("picture"),
-            "google_refresh_token": token.get("refresh_token"),  # Store Google's refresh token
+            "google_refresh_token": token.get("refresh_token"), 
             "last_login": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc)
         }
@@ -89,17 +92,15 @@ def google_callback(code: str = None):
             upsert=True
         )
 
-        front_end_callback_url = "http://localhost:3000/callback"
-        response = RedirectResponse(front_end_callback_url)
 
+        response = RedirectResponse(callBackURL)
         tokens = create_jwt_session(user_id)
-
         response.set_cookie(
             key="access_token",
             value= tokens["access_token"],
             httponly=True,
             secure= False,
-            max_age= 60*60*24*7,
+            max_age= 10*6,
             samesite="lax",
             domain="localhost"
         )
@@ -109,11 +110,22 @@ def google_callback(code: str = None):
             value=tokens["refresh_token"],
             httponly=True,
             secure=False,  
-            max_age= 10 * 365 * 24 * 60 * 60, #expire in 10 years
+            max_age= 10 * 365 * 24 * 60 * 60, 
             samesite="lax",
             domain="localhost"
         )
 
+        cookies_collection.update_one(
+            {"user_id": user_id},
+            {
+                "$set": 
+                {
+                    "refresh_token": tokens["refresh_token"],
+                    "created_at": datetime.now(timezone.utc)
+                }
+            },
+        upsert=True
+        )
 
         return response
 
@@ -121,50 +133,50 @@ def google_callback(code: str = None):
     except Exception as e:
         logger.error(f"OAuth error: {str(e)}")
         traceback.print_exc()
-        front_end_callback_url = "http://localhost:3000/callback"
-        response = RedirectResponse(front_end_callback_url)
+        response = RedirectResponse(callBackURL)
         return response
 
 
 @router.post("/signout", tags=["Auth"])
-async def signout():
+async def signout(request: Request):
+    refresh_token = request.cookies.get("refresh_token")
+    user_id = security.verify_refresh_token(refresh_token)
+    if user_id:
+        logger.info(f"Deleted token record for user")
+        cookies_collection.delete_one({"user_id": user_id})
     response = JSONResponse ({"message": "Signout Successfully"})
     response.delete_cookie("access_token", domain="localhost", path="/")
     response.delete_cookie("refresh_token", domain="localhost", path="/")
     return response 
     
 
-@router.post("/refresh", tags=["Auth"])
+@router.get("/refresh", tags=["Auth"])
 async def refresh_token(request: Request):
     refresh_token = request.cookies.get("refresh_token")
-    old_access_token = request.cookies.get("access_token")
-    
-
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token missing")
     try:
         user_id = security.verify_refresh_token(refresh_token)
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid refresh token")
-            
-        user = user_collection.find_one({"user_id": user_id})
+        
+
+        user = user_collection.find_one({"_id": ObjectId(user_id)})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
-            
-        new_access_tokens = security.create_access_token(user_id)
+        
 
+        new_access_tokens = security.create_access_token(user_id)
         response = JSONResponse({"message": "Access token refreshed successfully"})
         response.set_cookie(
             key="access_token",
             value= new_access_tokens,
             httponly=True,
             secure= True,
-            max_age= 2*10,
+            max_age= 60*10,
             samesite="none",
         )
-
         return response
-        
     except Exception as e:
         logger.error(f"Refresh token error: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid refresh token")

@@ -13,7 +13,6 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/auth", tags=["Auth"])
     app.include_router(users.router, prefix="/users", tags=["Users"])
     app.include_router(items.router, prefix="/items", tags=["Items"])
-    app.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace"])
 
 
     app.add_middleware(

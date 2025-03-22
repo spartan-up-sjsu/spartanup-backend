@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
     GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/google/callback")
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "mysecret")
+    FRONTEND_CALLBACK_URL: str
    
 
     class Config:
@@ -49,3 +50,4 @@ logger = logging.getLogger("app")
 db = client.spartan_up
 items_collection = db.items
 user_collection = db.users
+cookies_collection = db.cookies

@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import auth, users, items
+from app.routers import auth, users, items, reviews
 from app.config import Settings
 import dotenv
 from fastapi.responses import HTMLResponse
@@ -12,6 +12,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/auth", tags=["Auth"])
     app.include_router(users.router, prefix="/users", tags=["Users"])
     app.include_router(items.router, prefix="/items", tags=["Items"])
+    app.include_router(reviews.router, prefix= "/reviews", tags=["Reviews"])
 
     @app.get("/", response_class=HTMLResponse)
     async def read_root():

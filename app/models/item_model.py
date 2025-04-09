@@ -1,5 +1,5 @@
 from typing import Optional, List
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, Field
 from datetime import datetime
 from bson import ObjectId as _ObjectId
 from typing_extensions import Annotated
@@ -23,7 +23,7 @@ class ItemCreate(BaseModel):
     seller_id: ObjectId
     status: Optional[str] = "active"
     location: Optional[str]
-
+    createdAt: datetime = Field(default_factory=datetime.utcnow)
 
 class ItemRead(ItemCreate):
     created_at: datetime = None

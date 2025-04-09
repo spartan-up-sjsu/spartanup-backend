@@ -23,6 +23,17 @@ async def get_items():
         logger.error("Unable to retrieve items" + str(e))
         raise HTTPException(status_code=404, detail="Cannot retrieve items")
 
+@router.get("/{user_id}")
+async def get_user_items(user_id:str):
+    try:
+        logger.info("Retrieving user items")
+        seller_object_id = ObjectId(user_id)
+        items= list_serialize_items(items_collection.find({"seller_id": seller_object_id}))
+        return {"message": "User items retrieved successfully", "data": items}
+    except Exception as e:
+        logger.error(f"Unexpected error retrieving items for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 @router.get("/{item_id}") 
 async def get_item(item_id: str):
     try:

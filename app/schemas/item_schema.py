@@ -13,7 +13,7 @@ def serialize_item(item: ItemFromDB) -> dict:
         "price": item["price"],
         "condition": item["condition"],
         "category": item["category"],
-        "sellerId": str(item["sellerId"]),
+        "seller_id": str(item["seller_id"]),
         "status": item.get("status", "active"),
         "location": item.get("location", ""),
         "createdAt": item.get("createdAt"),

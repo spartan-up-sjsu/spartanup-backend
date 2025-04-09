@@ -58,6 +58,7 @@ async def create_item(item: str = Form(...), files: List[UploadFile] = File(...)
             logger.info("Image uploaded")
         validated_item_dict = validated_item.model_dump()
         validated_item_dict["images"] = images
+        validated_item_dict["seller_id"] = ObjectId(validated_item_dict["seller_id"])
         logger.info("Inserting item to mongodb")
         items_collection.insert_one(validated_item_dict)
         return {"message": "Item created successfully"}

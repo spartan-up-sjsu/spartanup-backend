@@ -10,7 +10,7 @@ import logging
 
 class Settings(BaseSettings):
     MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "mysecret")
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "mysecret")
     CLOUDINARY_URL: str | None = os.getenv("CLOUDINARY_URL")
     CLOUDINARY_CLOUD_NAME: str | None = os.getenv("CLOUDINARY_CLOUD_NAME")
     CLOUDINARY_API_KEY: str | None = os.getenv("CLOUDINARY_API_KEY")

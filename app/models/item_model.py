@@ -14,16 +14,17 @@ ObjectId = Annotated[str, AfterValidator(check_object_id)]
 
 
 class ItemCreate(BaseModel):
-    title: str
-    description: Optional[str]
-    images: List[str]
     price: float
+    description: str
+    detailedDescription: str
+    createdAt: datetime = Field(default_factory=datetime.utcnow)
     condition: str
     category: str
     seller_id: ObjectId
+    images: List[str]
     status: Optional[str] = "active"
     location: Optional[str]
-    createdAt: datetime = Field(default_factory=datetime.utcnow)
+    
 
 class ItemRead(ItemCreate):
     created_at: datetime = None

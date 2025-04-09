@@ -33,6 +33,8 @@ async def get_item(item_id: str):
             logger.error("Unable to find item")
             raise HTTPException(status_code=404, detail="Item not found")
         logger.info("Fetching item")
+        item['_id'] = str(item['_id'])
+        item['seller_id'] = str(item['seller_id'])
         return {"message": "Item retrieved successfully", "data": item}
     except errors.InvalidId: 
         logger.error(f"Invalid ObjectId format: {item_id}")

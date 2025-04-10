@@ -23,7 +23,7 @@ async def get_items():
         logger.error("Unable to retrieve items" + str(e))
         raise HTTPException(status_code=404, detail="Cannot retrieve items")
 
-@router.get("/{user_id}")
+@router.get("/user/{user_id}")
 async def get_user_items(user_id:str):
     try:
         logger.info("Retrieving user items")

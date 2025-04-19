@@ -1,15 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Form
-from typing import List
-from app.config import items_collection
-from app.schemas.item_schema import list_serialize_items
-from bson import ObjectId, errors
-from app.models.item_model import ItemRead, ItemFromDB, ItemCreate
-from fastapi import File, UploadFile
-from app.config import upload_image
-from app.config import logger
-import cloudinary.uploader
+from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile, status
+from typing import List, Optional
 import json
-from typing import Optional
+from bson import ObjectId, errors
+from datetime import datetime
+from app.config import items_collection, logger
+from app.schemas.item_schema import list_serialize_items
+from app.models.item_model import ItemCreate, Condition
+from app.core.security import get_current_user
+from app.services.cloudinary_service import upload_image
 
 router = APIRouter()
 
@@ -113,3 +111,62 @@ async def delete_item(item_id: str):
     except Exception as e:
         logger.error(f"Error deleting item: {str(e)}")
         raise HTTPException(status_code=500, detail="Cannot delete item")
+
+@router.post("/", status_code=status.HTTP_201_CREATED)
+async def create_item(
+    item: str = Form(...),
+    files: List[UploadFile] = File(...),
+    sellerId: str = Depends(get_current_user)
+):
+    try:
+        logger.info("Starting item creation process")
+
+        # 1. Parse and validate item data
+        item_data = json.loads(item)
+        item_data["sellerId"] = sellerId  # Inject authenticated user
+
+        # 2. Upload images to Cloudinary
+        images = []
+        for file in files:
+            logger.info(f"Uploading image: {file.filename}")
+            image_data = await file.read()
+            image_url = await upload_image(image_data)
+            images.append(image_url)
+
+        # 3. Create validated item with timestamps
+        validated_item = ItemCreate(
+            **item_data,
+            images=images,
+            createdAt=datetime.utcnow(),
+            updatedAt=datetime.utcnow()
+        )
+
+        # 4. Insert into MongoDB
+        result = items_collection.insert_one(validated_item.dict())
+
+        # 5. Return success response
+        return {
+            "message": "Item created successfully",
+            "itemId": str(result.inserted_id)
+        }
+
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON format in item data")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON format"
+        )
+    except ValueError as e:
+        logger.error(f"Validation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error creating item: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create item"
+        )
+
+

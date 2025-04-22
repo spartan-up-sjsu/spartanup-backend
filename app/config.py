@@ -50,4 +50,5 @@ logger = logging.getLogger("app")
 db = client.spartan_up
 items_collection = db.items
 user_collection = db.users
+reports_collection = db.reports
 cookies_collection = db.cookies

@@ -1,1 +1,1 @@
-    client.admin.command("ping")
+client.admin.command("ping")

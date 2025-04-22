@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import auth, users, items, marketplace, api, reports, admin, websocket, conversation
+from app.routers import auth, users, items, marketplace, api, reports, admin, websocket, conversation, reviews
 from app.config import Settings
 import dotenv
 from fastapi.responses import HTMLResponse
@@ -13,6 +13,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/auth", tags=["Auth"])
     app.include_router(users.router, prefix="/users", tags=["Users"])
     app.include_router(items.router, prefix="/items", tags=["Items"])
+    app.include_router(reviews.router, prefix= "/reviews", tags=["Reviews"])
     app.include_router(websocket.router, prefix = "/ws", tags=["ws"])
     app.include_router(conversation.router, prefix="/convo", tags=["convo"])
     app.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace"])

@@ -1,21 +1,28 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from app.core import security
+from fastapi.responses import JSONResponse
 from fastapi.responses import RedirectResponse
-from ..config import logger, user_collection, settings
+from ..config import logger, user_collection,cookies_collection, settings
 from authlib.integrations.requests_client import OAuth2Session
 import traceback
 from datetime import datetime
 from datetime import timezone   
+from fastapi.responses import JSONResponse
+from fastapi import Request
+from bson import ObjectId
+from datetime import datetime, timezone
+
 
 router = APIRouter()
 
 GOOGLE_CONF_URL = 'https://accounts.google.com/.well-known/openid-configuration'
 GOOGLE_SCOPES = ['openid', 'email', 'profile']
+callBackURL = settings.FRONTEND_CALLBACK_URL
 
-def create_jwt_session(email: str) -> dict:
+def create_jwt_session(user_id: str) -> dict:
     """Create a new JWT session with both access and refresh tokens"""
-    access_token = security.create_access_token(email)
-    refresh_token = security.create_refresh_token(email)
+    access_token = security.create_access_token(user_id)
+    refresh_token = security.create_refresh_token(user_id)
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
@@ -41,7 +48,6 @@ def google_login():
 def google_callback(code: str = None):
     if not code:
         raise HTTPException(status_code=400, detail="No code provided by Google OAuth.")
-
     logger.info("Exchange code for token")
     try:
         client = OAuth2Session(
@@ -55,7 +61,7 @@ def google_callback(code: str = None):
             grant_type='authorization_code'
         )
         
-        # Fetch user info
+
         resp = client.get('https://www.googleapis.com/oauth2/v2/userinfo')
         user_info = resp.json()
         
@@ -63,50 +69,117 @@ def google_callback(code: str = None):
         if not email or not email.endswith(".edu"):
             raise HTTPException(status_code=401, detail="Access denied, user not an edu email")
         
-        # Store or update user in database
+
         user_data = {
             "email": email,
             "name": user_info.get("name"),
             "picture": user_info.get("picture"),
-            "google_refresh_token": token.get("refresh_token"),  # Store Google's refresh token
+            "google_refresh_token": token.get("refresh_token"), 
             "last_login": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc)
         }
-        
-        # Upsert user data
+        user_record = user_collection.find_one({"email": email})
+        if not user_record:
+            new_user = user_data.copy()  
+            new_user["_id"] = user_collection.insert_one(user_data).inserted_id 
+            user_id = str(new_user["_id"])
+        else:
+            user_id = str(user_record["_id"])
+
         user_collection.update_one(
             {"email": email},
             {"$set": user_data},
             upsert=True
         )
 
-        # Create new JWT session
-        tokens = create_jwt_session(email)
-        return {
-            "message": "Logged in with Google successfully!",
-            **tokens
-        }
+
+        response = RedirectResponse(callBackURL)
+        tokens = create_jwt_session(user_id)
+        response.set_cookie(
+            key="access_token",
+            value= tokens["access_token"],
+            httponly=True,
+            secure= False,
+            max_age= 10*6,
+            samesite="lax",
+            domain="localhost"
+        )
+
+        response.set_cookie(
+            key="refresh_token",
+            value=tokens["refresh_token"],
+            httponly=True,
+            secure=False,  
+            max_age= 10 * 365 * 24 * 60 * 60, 
+            samesite="lax",
+            domain="localhost"
+        )
+
+        cookies_collection.update_one(
+            {"user_id": user_id},
+            {
+                "$set": 
+                {
+                    "refresh_token": tokens["refresh_token"],
+                    "created_at": datetime.now(timezone.utc)
+                }
+            },
+        upsert=True
+        )
+
+        return response
+
 
     except Exception as e:
         logger.error(f"OAuth error: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
+        response = RedirectResponse(callBackURL)
+        return response
 
-@router.post("/refresh")
-async def refresh_token(refresh_token: str):
+
+@router.post("/signout", tags=["Auth"])
+async def signout(request: Request):
+    refresh_token = request.cookies.get("refresh_token")
+    user_id = security.verify_refresh_token(refresh_token)
+    if user_id:
+        logger.info(f"Deleted token record for user")
+        cookies_collection.delete_one({"user_id": user_id})
+    response = JSONResponse ({"message": "Signout Successfully"})
+    response.delete_cookie("access_token", domain="localhost", path="/")
+    response.delete_cookie("refresh_token", domain="localhost", path="/")
+    return response 
+    
+
+@router.get("/refresh", tags=["Auth"])
+async def refresh_token(request: Request):
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Refresh token missing")
     try:
-        email = security.verify_refresh_token(refresh_token)
-        if not email:
+        user_id = security.verify_refresh_token(refresh_token)
+        if not user_id:
             raise HTTPException(status_code=401, detail="Invalid refresh token")
-            
-        # Verify user exists in database
-        user = user_collection.find_one({"email": email})
+        
+
+        user = user_collection.find_one({"_id": ObjectId(user_id)})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
-            
-        # Create new JWT session
-        return create_jwt_session(email)
         
+
+        new_access_tokens = security.create_access_token(user_id)
+        response = JSONResponse({"message": "Access token refreshed successfully"})
+        response.set_cookie(
+            key="access_token",
+            value= new_access_tokens,
+            httponly=True,
+            secure= True,
+            max_age= 60*10,
+            samesite="none",
+        )
+        return response
     except Exception as e:
         logger.error(f"Refresh token error: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+
+

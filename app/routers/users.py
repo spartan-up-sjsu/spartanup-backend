@@ -1,13 +1,42 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
+from app.config import logger
 from ..models.user_model import UserCreate, UserRead
+from fastapi import Request
+from app.core.security import verify_access_token
+from ..config import user_collection, items_collection
+from bson import ObjectId
 
 router = APIRouter()
+
+@router.get("/@me")
+async def read_current_user(request: Request):
+    token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        user_id = verify_access_token(token)
+        user = user_collection.find_one({"_id": ObjectId(user_id)})
+        if user:
+            user["_id"] = str(user["_id"])
+        items = items_collection.find({"seller_id": ObjectId(user_id)})
+        items_list = []
+        for item in items:
+            item["_id"] = str(item["_id"])
+            item["seller_id"] = str(item["seller_id"])
+            items_list.append(item)
+    except Exception as e:
+        logger.error(f"Token verification error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Token verification failed")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return {"user": user, "items_list": items_list} 
+
 
 
 @router.get("/", response_model=List[UserRead])
 async def get_users():
-    # TODO: Implement get all users
+    # TODO: 
     return []
 
 

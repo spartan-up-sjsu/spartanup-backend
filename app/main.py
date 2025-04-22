@@ -1,8 +1,9 @@
 from fastapi import FastAPI
-from app.routers import auth, users, items, websocket, conversation
+from app.routers import auth, users, items, marketplace, api, reports, admin, websocket, conversation
 from app.config import Settings
 import dotenv
 from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 dotenv.load_dotenv()
 
@@ -14,7 +15,20 @@ def create_app() -> FastAPI:
     app.include_router(items.router, prefix="/items", tags=["Items"])
     app.include_router(websocket.router, prefix = "/ws", tags=["ws"])
     app.include_router(conversation.router, prefix="/convo", tags=["convo"])
+    app.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace"])
+    app.include_router(reports.router, prefix="/reports", tags={"Reports"})
+    app.include_router(admin.router, prefix= "/admin", tags={"Admin"})
+    app.include_router(api.router, prefix= "/api", tags=["Api"])
 
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000"],  
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "HEAD", "OPTIONS"],
+        allow_headers=["Access-Control-Allow-Headers", 'Content-Type', 'Authorization', 'Access-Control-Allow-Origin'],
+    )
+    
     @app.get("/", response_class=HTMLResponse)
     async def read_root():
         html_content = """
@@ -37,4 +51,5 @@ def create_app() -> FastAPI:
 
 app = create_app()
 
-# to start: uvicorn app.main:app --reload
+# to start: uvicorn app.main:app --reload --host localhost --port 8000
+

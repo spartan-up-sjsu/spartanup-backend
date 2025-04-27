@@ -11,6 +11,7 @@ import json
 from typing import Optional
 from app.core.security import verify_access_token
 from app.routers.api import get_current_user_id
+from datetime import datetime, timedelta
 
 router = APIRouter()
 
@@ -21,16 +22,21 @@ async def get_items(
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
     search: Optional[str] = None,
-    personal_only: Optional[bool] = False
+    personal_only: Optional[bool] = False,
+    seller_id: Optional[str] = None,
+    recency: Optional[int] = None  # Number of days, e.g. 7, 30, 90
 ):
     try: 
-        logger.info("Retrieving all items from mongodb with filters")
+        logger.info(f"[GET /items] Retrieving items | user_id={user_id}, category={category}, min_price={min_price}, max_price={max_price}, search={search}, personal_only={personal_only}, recency={recency}")
         if personal_only:
             query = {"seller_id": user_id}
+            logger.debug(f"Filtering for personal items only. Query: {query}")
         else:
             query = {"seller_id": {"$ne": user_id}}
+            logger.debug(f"Filtering for non-personal items. Query: {query}")
         if category:
             query["category"] = category
+            logger.debug(f"Added category filter: {category}")
         if min_price is not None or max_price is not None:
             price_filter = {}
             if min_price is not None:
@@ -38,17 +44,32 @@ async def get_items(
             if max_price is not None:
                 price_filter["$lte"] = max_price
             query["price"] = price_filter
+            logger.debug(f"Added price filter: {price_filter}")
         if search:
+            search_pattern = search.lower()
             query["$or"] = [
-                {"name": {"$regex": search, "$options": "i"}},
-                {"description": {"$regex": search, "$options": "i"}}
+                {"$expr": {"$regexMatch": {"input": {"$toLower": "$title"}, "regex": search_pattern}}},
+                {"$expr": {"$regexMatch": {"input": {"$toLower": "$description"}, "regex": search_pattern}}}
             ]
-        items = list_serialize_items(
-            items_collection.find(query)
-        )
+            logger.debug(f"Added search filter for pattern: {search_pattern}")
+        if seller_id:
+            query["seller_id"] = seller_id
+            logger.debug(f"Added seller_id filter: {seller_id}")
+        if recency is not None:
+            try:
+                days = int(recency)
+                since_date = datetime.now(datetime.timezone.utc) - timedelta(days=days)
+                query["createdAt"] = {"$gte": since_date}
+                logger.info(f"Filtering items created in the last {days} days (since {since_date})")
+            except Exception as e:
+                logger.warning(f"Invalid recency value: {recency} | Error: {str(e)}")
+        logger.debug(f"Final MongoDB query: {query}")
+        items_cursor = items_collection.find(query).sort("createdAt", -1)
+        items = list_serialize_items(items_cursor)
+        logger.debug(f"Items found: {len(items)}")
         return {"message": "Items retrieved successfully", "data": items}
     except Exception as e: 
-        logger.error("Unable to retrieve items" + str(e))
+        logger.error(f"Unable to retrieve items: {str(e)}")
         raise HTTPException(status_code=404, detail="Cannot retrieve items")
 
 @router.get("/{item_id}") 

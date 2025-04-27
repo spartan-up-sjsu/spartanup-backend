@@ -70,16 +70,25 @@ def google_callback(code: str = None):
             raise HTTPException(status_code=401, detail="Access denied, user not an edu email")
         
 
+        # Only update the picture if the current one is not a Cloudinary URL
+        user_record = user_collection.find_one({"email": email})
+        google_picture = user_info.get("picture")
+        update_picture = True
+        if user_record and user_record.get("picture"):
+            current_picture = user_record["picture"]
+            if current_picture.startswith("https://res.cloudinary.com/"):
+                update_picture = False
+
         user_data = {
             "email": email,
             "name": user_info.get("name"),
-            "picture": user_info.get("picture"),
+            # Only update the picture if not a Cloudinary image
+            "picture": google_picture if update_picture else user_record.get("picture"),
             "google_refresh_token": token.get("refresh_token"), 
             "last_login": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
             "is_admin": False
         }
-        user_record = user_collection.find_one({"email": email})
         if not user_record:
             new_user = user_data.copy()  
             new_user["_id"] = user_collection.insert_one(user_data).inserted_id 
@@ -188,6 +197,3 @@ async def refresh_token(request: Request):
     except Exception as e:
         logger.error(f"Refresh token error: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-
-
-

@@ -20,7 +20,8 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/google/callback")
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "mysecret")
     FRONTEND_CALLBACK_URL: str
-   
+    ENV: str = os.getenv("ENV", "development")
+    DOMAIN: str = os.getenv("DOMAIN", "localhost")
 
     class Config:
         env_file = ".env"

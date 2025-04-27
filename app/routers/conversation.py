@@ -232,6 +232,22 @@ async def get_conversations(
                     "preserveNullAndEmptyArrays": True
                 }
             },
+            # Lookup to get the item details
+            {
+                "$lookup": {
+                    "from": "items",
+                    "localField": "item_id",
+                    "foreignField": "_id",
+                    "as": "item_details"
+                }
+            },
+            # Unwind the item_details array (will be empty if no item found)
+            {
+                "$unwind": {
+                    "path": "$item_details",
+                    "preserveNullAndEmptyArrays": True
+                }
+            },
             # Lookup to get the latest message
             {
                 "$lookup": {
@@ -275,6 +291,14 @@ async def get_conversations(
                         "email": "$seller_details.email",
                         "name": "$seller_details.name",
                         "picture": "$seller_details.picture"
+                    },
+                    "item_details": {
+                        "_id": "$item_details._id",
+                        "title": "$item_details.title",
+                        "price": "$item_details.price",
+                        "image": { "$arrayElemAt": ["$item_details.images", 0] },
+                        "images": "$item_details.images",
+                        "condition": "$item_details.condition"
                     },
                     "latest_message": {
                         "_id": "$latest_messages._id",
@@ -321,6 +345,20 @@ async def get_conversations(
                 }
             else:
                 serialized_conv["seller_details"] = None
+            
+            # Handle item details
+            if "item_details" in conv and conv["item_details"] and "_id" in conv["item_details"]:
+                item_details = conv["item_details"]
+                serialized_conv["item_details"] = {
+                    "id": str(item_details["_id"]),
+                    "title": item_details.get("title", ""),
+                    "price": item_details.get("price", 0),
+                    "image": item_details.get("image", ""),
+                    "images": item_details.get("images", []),
+                    "condition": item_details.get("condition", "")
+                }
+            else:
+                serialized_conv["item_details"] = None
             
             # Handle latest message
             if "latest_message" in conv and conv["latest_message"] and "_id" in conv["latest_message"]:

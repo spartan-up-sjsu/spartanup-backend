@@ -105,17 +105,18 @@ def google_callback(code: str = None):
 
         response = RedirectResponse(callBackURL)
         tokens = create_jwt_session(user_id)
+        domain = "spartanup.app" if settings.ENV == "production" else None
+
         response.set_cookie(
             key="access_token",
             value=tokens["access_token"],
             httponly=True,
-            max_age=10*6,
+            max_age=7 * 24 * 60 * 60,
             samesite="Lax",
-            secure=False,
+            secure=settings.ENV == "production",
             path="/",
-            domain=None,
+            domain=domain
         )
-
 
         response.set_cookie(
             key="refresh_token",
@@ -123,9 +124,9 @@ def google_callback(code: str = None):
             httponly=True,
             max_age=10 * 365 * 24 * 60 * 60,
             samesite="Lax",
-            secure=False,
+            secure=settings.ENV == "production",
             path="/",
-            domain=None,
+            domain=domain
         )
 
         logger.info("Setting cookies %s", tokens["access_token"])

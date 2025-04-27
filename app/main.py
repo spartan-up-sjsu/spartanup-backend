@@ -25,7 +25,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000"],  
+        allow_origins=["http://localhost:3000", "http://localhost:8000", "https://spartanup.app", "https://www.spartanup.app"],  
         allow_credentials=True,
         allow_methods=["GET", "POST", "HEAD", "OPTIONS", "PUT", "PATCH", "DELETE"],
         allow_headers=["Access-Control-Allow-Headers", 'Content-Type', 'Authorization', 'Access-Control-Allow-Origin'],
@@ -54,4 +54,7 @@ def create_app() -> FastAPI:
 app = create_app()
 
 # to start: uvicorn app.main:app --reload --host localhost --port 8000
+
+
+# to start: uvicorn app.main:app --reload --host localhost --port $PORT
 

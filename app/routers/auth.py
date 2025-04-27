@@ -101,7 +101,7 @@ def google_callback(code: str = None):
             value=tokens["access_token"],
             httponly=True,
             max_age=10*6,
-            samesite="none",
+            samesite="Lax",
             secure=False,
             path="/",
             domain=None,
@@ -113,13 +113,13 @@ def google_callback(code: str = None):
             value=tokens["refresh_token"],
             httponly=True,
             max_age=10 * 365 * 24 * 60 * 60,
-            samesite="none",
+            samesite="Lax",
             secure=False,
             path="/",
             domain=None,
         )
 
-        logger.info("Setting cookies", tokens["access_token"])
+        logger.info("Setting cookies %s", tokens["access_token"])
 
         cookies_collection.update_one(
             {"user_id": user_id},

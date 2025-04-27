@@ -12,6 +12,7 @@ router = APIRouter()
 @router.get("/@me")
 async def read_current_user(request: Request):
     token = request.cookies.get("access_token")
+    print(token)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:

@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import auth, users, items, marketplace, api, reports, admin, websocket, conversation, reviews
+from app.routers import auth, users, items, marketplace, api, reports, admin, websocket, conversation, reviews, preferences
 from app.config import Settings
 import dotenv
 from fastapi.responses import HTMLResponse
@@ -20,13 +20,14 @@ def create_app() -> FastAPI:
     app.include_router(reports.router, prefix="/reports", tags={"Reports"})
     app.include_router(admin.router, prefix= "/admin", tags={"Admin"})
     app.include_router(api.router, prefix= "/api", tags=["Api"])
+    app.include_router(preferences.router, prefix= "/preferences", tags=["Preferences"])
 
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:3000"],  
         allow_credentials=True,
-        allow_methods=["GET", "POST", "HEAD", "OPTIONS"],
+        allow_methods=["GET", "POST", "HEAD", "OPTIONS", "PUT", "PATCH"],
         allow_headers=["Access-Control-Allow-Headers", 'Content-Type', 'Authorization', 'Access-Control-Allow-Origin'],
     )
     

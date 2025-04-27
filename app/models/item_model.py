@@ -35,12 +35,14 @@ class ItemFromDB(ItemRead):
 class Config:
     arbitrary_types_allowed = True
     json_encoders = {ObjectId: str} 
+    
 class ProductUpdate(BaseModel):
     title: Optional[str] = None
     price: Optional[float] = None
     condition: Optional[Literal["New", "Like New", "Used", "Poor"]] = None
     description: Optional[str] = None
     images: Optional[List[HttpUrl]] = None
+    remove_urls: Optional[List[str]] = None
 
     @validator("images", each_item=True)
     def validate_cloudinary_url(cls, v):

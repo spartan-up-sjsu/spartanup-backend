@@ -14,8 +14,59 @@ from app.websocket_manager import ws_manager
 import asyncio
 import functools
 from fastapi.params import Depends
+from functools import lru_cache
+from fastapi import Query, Depends, BackgroundTasks
+import time
 
 router = APIRouter()
+
+# Cache for user conversations (key: user_id, value: conversation data)
+# This will expire after 30 seconds to ensure data freshness
+conversation_cache = {}
+CACHE_EXPIRY = 30  # seconds
+
+# Background task to refresh the cache
+async def refresh_conversation_cache(user_id: str):
+    try:
+        # Fetch conversations directly without going through the endpoint
+        conversations_list = list(conversations_collection.find(
+            {"$or": [{"seller_id": ObjectId(user_id)}, {"buyer_id": ObjectId(user_id)}]}
+        ))
+        
+        if not conversations_list:
+            conversation_cache[user_id] = {"message": "No conversations found", "data": [], "timestamp": time.time()}
+            return
+            
+        serialized_conversations = [serialize_conversation(conv) for conv in conversations_list]
+        
+        # Process in batches to avoid overwhelming the database
+        batch_size = 10
+        for i in range(0, len(conversations_list), batch_size):
+            batch = conversations_list[i:i+batch_size]
+            tasks = []
+            
+            for conversation in batch:
+                tasks.append(fetch_seller_details(conversation["seller_id"]))
+                tasks.append(fetch_latest_message(conversation["_id"]))
+            
+            results = await asyncio.gather(*tasks)
+            
+            for j, conv_index in enumerate(range(i, min(i+batch_size, len(serialized_conversations)))):
+                seller_index = j * 2
+                message_index = j * 2 + 1
+                
+                serialized_conversations[conv_index]["seller_details"] = results[seller_index]
+                serialized_conversations[conv_index]["latest_message"] = results[message_index]
+        
+        # Update the cache
+        conversation_cache[user_id] = {
+            "message": "Conversations retrieved successfully", 
+            "data": serialized_conversations,
+            "timestamp": time.time()
+        }
+        logger.info(f"Cache refreshed for user {user_id}")
+    except Exception as e:
+        logger.error(f"Error refreshing cache for user {user_id}: {str(e)}")
 
 @router.post("/")
 async def create_conversation(item_id: str = Form(...), initial_message: str = Form(...), user_id = Depends(get_current_user)):
@@ -116,30 +167,219 @@ async def send_message(conversation_id: str, message: str = Form(...), sender_id
         logger.error("Invalid conversation ID format")
         raise HTTPException(status_code=400, detail="Invalid conversation ID format")
 
-#this function retrieves all conversations from the database
+#this function retrieves all conversations for a specific user from the database
 @router.get("/")
-async def get_conversations():
-    try: 
-        logger.info("Retrieving all conversations from mongodb")
+async def get_conversations(
+    background_tasks: BackgroundTasks,
+    user_id = Depends(get_current_user),
+    limit: int = Query(50, ge=1, le=100),
+    skip: int = Query(0, ge=0),
+    force_refresh: bool = Query(False)
+):
+    try:
+        logger.info(f"Retrieving conversations for user {user_id} (limit: {limit}, skip: {skip})")
         
-        # Get all conversations (this is synchronous)
-        conversations_list = await asyncio.to_thread(list, conversations_collection.find())
+        # Check if we have a valid cache entry
+        cache_entry = conversation_cache.get(user_id)
+        cache_valid = (
+            cache_entry is not None and 
+            time.time() - cache_entry["timestamp"] < CACHE_EXPIRY and
+            not force_refresh
+        )
+        
+        # If we have a valid cache entry, use it
+        if cache_valid:
+            logger.info(f"Using cached conversations for user {user_id}")
+            data = cache_entry["data"][skip:skip+limit]
+            return {"message": "Conversations retrieved successfully", "data": data}
+        
+        # If no valid cache, fetch from database with aggregation pipeline
+        # This does everything in a single MongoDB query
+        pipeline = [
+            # Match conversations where the user is either seller or buyer
+            {
+                "$match": {
+                    "$or": [
+                        {"seller_id": ObjectId(user_id)}, 
+                        {"buyer_id": ObjectId(user_id)}
+                    ]
+                }
+            },
+            # Sort by updated_at or created_at to get most recent conversations first
+            {
+                "$sort": {"updated_at": -1}
+            },
+            # Apply pagination
+            {
+                "$skip": skip
+            },
+            {
+                "$limit": limit
+            },
+            # Lookup to get the seller details
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "seller_id",
+                    "foreignField": "_id",
+                    "as": "seller_details"
+                }
+            },
+            # Unwind the seller_details array (will be empty if no seller found)
+            {
+                "$unwind": {
+                    "path": "$seller_details",
+                    "preserveNullAndEmptyArrays": True
+                }
+            },
+            # Lookup to get the latest message
+            {
+                "$lookup": {
+                    "from": "messages",
+                    "let": {"conv_id": "$_id"},
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": {"$eq": ["$conversation_id", "$$conv_id"]}
+                            }
+                        },
+                        {
+                            "$sort": {"timestamp": -1, "created_at": -1}
+                        },
+                        {
+                            "$limit": 1
+                        }
+                    ],
+                    "as": "latest_messages"
+                }
+            },
+            # Unwind the latest_messages array (will be empty if no messages)
+            {
+                "$unwind": {
+                    "path": "$latest_messages",
+                    "preserveNullAndEmptyArrays": True
+                }
+            },
+            # Project only the fields we need
+            {
+                "$project": {
+                    "_id": 1,
+                    "seller_id": 1,
+                    "buyer_id": 1,
+                    "item_id": 1,
+                    "created_at": 1,
+                    "updated_at": 1,
+                    "status": 1,
+                    "seller_details": {
+                        "_id": "$seller_details._id",
+                        "email": "$seller_details.email",
+                        "name": "$seller_details.name",
+                        "picture": "$seller_details.picture"
+                    },
+                    "latest_message": {
+                        "_id": "$latest_messages._id",
+                        "sender_id": "$latest_messages.sender_id",
+                        "message": "$latest_messages.message",
+                        "content": "$latest_messages.content",
+                        "created_at": "$latest_messages.created_at",
+                        "timestamp": "$latest_messages.timestamp"
+                    }
+                }
+            }
+        ]
+        
+        # Execute the aggregation pipeline
+        try:
+            conversations_with_details = await asyncio.to_thread(
+                list,
+                conversations_collection.aggregate(pipeline)
+            )
+            logger.debug(f"Aggregation pipeline returned {len(conversations_with_details)} conversations")
+        except Exception as e:
+            logger.error(f"Error in aggregation pipeline: {str(e)}")
+            # Fall back to the previous method if aggregation fails
+            return await get_conversations_fallback(user_id, limit, skip)
+        
+        if not conversations_with_details:
+            # Schedule a background refresh for next time
+            background_tasks.add_task(refresh_conversation_cache, user_id)
+            return {"message": "No conversations found", "data": []}
+        
+        # Serialize the results
+        serialized_conversations = []
+        for conv in conversations_with_details:
+            serialized_conv = serialize_conversation(conv)
+            
+            # Handle seller details
+            if "seller_details" in conv and conv["seller_details"] and "_id" in conv["seller_details"]:
+                seller_details = conv["seller_details"]
+                serialized_conv["seller_details"] = {
+                    "id": str(seller_details["_id"]),
+                    "email": seller_details.get("email", ""),
+                    "name": seller_details.get("name", ""),
+                    "picture": seller_details.get("picture", "")
+                }
+            else:
+                serialized_conv["seller_details"] = None
+            
+            # Handle latest message
+            if "latest_message" in conv and conv["latest_message"] and "_id" in conv["latest_message"]:
+                latest_msg = conv["latest_message"]
+                content = latest_msg.get("message", latest_msg.get("content", ""))
+                timestamp = latest_msg.get("timestamp", latest_msg.get("created_at", ""))
+                
+                serialized_conv["latest_message"] = {
+                    "id": str(latest_msg["_id"]),
+                    "sender_id": str(latest_msg["sender_id"]),
+                    "content": content,
+                    "timestamp": timestamp.isoformat() if isinstance(timestamp, datetime) else str(timestamp)
+                }
+            else:
+                serialized_conv["latest_message"] = None
+            
+            serialized_conversations.append(serialized_conv)
+        
+        # Update the cache with the results
+        # We're only caching what we've fetched, not the full dataset
+        conversation_cache[user_id] = {
+            "message": "Conversations retrieved successfully",
+            "data": serialized_conversations,
+            "timestamp": time.time()
+        }
+        
+        # Schedule a background refresh of the full cache if needed
+        if len(serialized_conversations) == limit:  # There might be more data
+            background_tasks.add_task(refresh_conversation_cache, user_id)
+        
+        return {"message": "Conversations retrieved successfully", "data": serialized_conversations}
+    except Exception as e:
+        logger.error(f"Unable to retrieve conversations: {str(e)}")
+        # Fall back to the previous method if anything goes wrong
+        return await get_conversations_fallback(user_id, limit, skip)
+
+# Fallback method in case the aggregation pipeline fails
+async def get_conversations_fallback(user_id, limit, skip):
+    try:
+        logger.info(f"Using fallback method to retrieve conversations for user {user_id}")
+        
+        # Get conversations with pagination
+        conversations_list = list(conversations_collection.find(
+            {"$or": [{"seller_id": ObjectId(user_id)}, {"buyer_id": ObjectId(user_id)}]}
+        ).sort("updated_at", -1).skip(skip).limit(limit))
+        
+        if not conversations_list:
+            return {"message": "No conversations found", "data": []}
+            
         serialized_conversations = [serialize_conversation(conv) for conv in conversations_list]
         
-        # Create tasks for fetching seller details and first messages concurrently
+        # Fetch details concurrently
         tasks = []
-        
         for conversation in conversations_list:
-            # Add task for fetching seller details
             tasks.append(fetch_seller_details(conversation["seller_id"]))
-            
-            # Add task for fetching first message
             tasks.append(fetch_latest_message(conversation["_id"]))
         
-        # Execute all tasks concurrently
         results = await asyncio.gather(*tasks)
         
-        # Process results (they come in pairs: seller details, first message)
         for i, serialized_conv in enumerate(serialized_conversations):
             seller_index = i * 2
             message_index = i * 2 + 1
@@ -148,9 +388,9 @@ async def get_conversations():
             serialized_conv["latest_message"] = results[message_index]
         
         return {"message": "Conversations retrieved successfully", "data": serialized_conversations}
-    except Exception as e: 
-        logger.error("Unable to retrieve conversations" + str(e))
-        raise HTTPException(status_code=404, detail="Cannot retrieve conversations")
+    except Exception as e:
+        logger.error(f"Fallback method failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Cannot retrieve conversations: {str(e)}")
 
 # Helper function to fetch seller details
 async def fetch_seller_details(seller_id):
@@ -169,18 +409,20 @@ async def fetch_seller_details(seller_id):
 async def fetch_latest_message(conversation_id):
     # Run the synchronous MongoDB operation in a thread pool
     latest_message = await asyncio.to_thread(
-        functools.partial(
-            messages_collection.find_one,
+        lambda: messages_collection.find_one(
             {"conversation_id": conversation_id},
-            sort=[("created_at", -1)]  # Sort by created_at in descending order to get the latest message
+            sort=[("timestamp", -1)]  # Sort by timestamp in descending order to get the latest message
         )
     )
+    
     if latest_message:
         return {
             "id": str(latest_message["_id"]),
             "sender_id": str(latest_message["sender_id"]),
-            "message": latest_message["message"],
-            "created_at": latest_message["created_at"].isoformat()
+            "content": latest_message.get("message", ""),  # Handle different field names
+            "timestamp": latest_message.get("timestamp", latest_message.get("created_at", "")).isoformat() 
+            if isinstance(latest_message.get("timestamp", latest_message.get("created_at", "")), datetime) 
+            else str(latest_message.get("timestamp", latest_message.get("created_at", "")))
         }
     return None
 

@@ -1,10 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Form, Request
-from typing import List
+from fastapi import APIRouter, Depends, HTTPException, Form, Request, File, UploadFile, Body
+from typing import List, Optional
 from app.config import items_collection, user_collection
 from app.schemas.item_schema import list_serialize_items
 from bson import ObjectId, errors
-from app.models.item_model import ItemRead, ItemFromDB, ItemCreate
-from fastapi import File, UploadFile
+from app.models.item_model import ItemRead, ItemFromDB, ItemCreate, ProductUpdate
 from app.config import upload_image
 from app.config import logger
 import cloudinary.uploader
@@ -16,10 +15,37 @@ from app.routers.api import get_current_user_id
 router = APIRouter()
 
 @router.get("/")
-async def get_items():
+async def get_items(
+    user_id: str = Depends(get_current_user_id),
+    category: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    search: Optional[str] = None,
+    personal_only: Optional[bool] = False
+):
     try: 
-        logger.info("Retrieving all items from mongodb")
-        items = list_serialize_items(items_collection.find())
+        logger.info("Retrieving all items from mongodb with filters")
+        if personal_only:
+            query = {"seller_id": user_id}
+        else:
+            query = {"seller_id": {"$ne": user_id}}
+        if category:
+            query["category"] = category
+        if min_price is not None or max_price is not None:
+            price_filter = {}
+            if min_price is not None:
+                price_filter["$gte"] = min_price
+            if max_price is not None:
+                price_filter["$lte"] = max_price
+            query["price"] = price_filter
+        if search:
+            query["$or"] = [
+                {"name": {"$regex": search, "$options": "i"}},
+                {"description": {"$regex": search, "$options": "i"}}
+            ]
+        items = list_serialize_items(
+            items_collection.find(query)
+        )
         return {"message": "Items retrieved successfully", "data": items}
     except Exception as e: 
         logger.error("Unable to retrieve items" + str(e))
@@ -84,3 +110,62 @@ async def delete_item(item_id: str):
     except Exception as e:
         logger.error(f"Error deleting item: {str(e)}")
         raise HTTPException(status_code=500, detail="Cannot delete item")
+
+@router.patch("/{item_id}")
+async def update_item(
+    item_id: str,
+    update: str = Form(...),
+    user_id: str = Depends(get_current_user_id),
+    add_files: Optional[List[UploadFile]] = File(None)
+):
+    try:
+        logger.info(f"[PATCH /items/{{item_id}}] Request to update item: {item_id} by user: {user_id}")
+        logger.debug(f"Raw update payload: {update}")
+        logger.debug(f"add_files: {add_files}")
+        existing_item = items_collection.find_one({"_id": ObjectId(item_id)})
+        if not existing_item:
+            logger.error(f"Item {item_id} not found in database.")
+            raise HTTPException(status_code=404, detail="Item not found")
+        logger.info(f"Item found: {existing_item}")
+        if str(existing_item["seller_id"]) != str(user_id):
+            logger.warning(f"User {user_id} not authorized to edit item {item_id} (seller: {existing_item['seller_id']})")
+            raise HTTPException(status_code=403, detail="Not authorized to edit this product")
+        try:
+            update_data_dict = json.loads(update)
+            logger.info(f"Parsed update data: {update_data_dict}")
+            update_data = ProductUpdate(**update_data_dict).model_dump(exclude_unset=True)
+            logger.info(f"Validated update data: {update_data}")
+        except Exception as e:
+            logger.error(f"Invalid update format: {str(e)} | Raw: {update}")
+            raise HTTPException(status_code=400, detail="Invalid update format")
+        images = existing_item.get("images", [])
+        logger.debug(f"Current images: {images}")
+        # Remove specified URLs if present in update_data
+        remove_urls = update_data.pop("remove_urls", None)
+        if remove_urls:
+            logger.info(f"Removing images: {remove_urls}")
+            images = [img for img in images if img not in remove_urls]
+            logger.debug(f"Images after removal: {images}")
+        # Add new files
+        if add_files:
+            for file in add_files:
+                logger.info(f"Uploading new image to cloudinary: {file.filename}")
+                image_data = await file.read()
+                image_url = await upload_image(image_data)
+                logger.info(f"Uploaded image URL: {image_url}")
+                images.append(image_url)
+            logger.debug(f"Images after addition: {images}")
+        update_data["images"] = images
+        logger.info(f"Final update_data to be set: {update_data}")
+        result = items_collection.update_one(
+            {"_id": ObjectId(item_id)},
+            {"$set": update_data}
+        )
+        logger.info(f"MongoDB update result: matched={result.matched_count}, modified={result.modified_count}")
+        return {"message": "Item updated successfully"}
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON format in update payload")
+        raise HTTPException(status_code=400, detail="Invalid JSON format")
+    except Exception as e:
+        logger.error(f"Error updating item {item_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Cannot update item")

@@ -45,7 +45,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
-logger = logging.getLogger("app")
+logger = logging.getLogger("spartan-up (backend)")
 
 db = client.spartan_up
 items_collection = db.items
@@ -55,3 +55,5 @@ conversations_collection = db.conversations
 messages_collection = db.messages
 reports_collection = db.reports
 cookies_collection = db.cookies
+
+print("Logging level set to DEBUG. All logs will be displayed.")

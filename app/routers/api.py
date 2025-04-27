@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Form, Request, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Form, Request, File, UploadFile, Body
 from typing import List
 from app.config import items_collection, user_collection
 from app.core.security import verify_access_token
@@ -29,30 +29,4 @@ async def get_current_user_id(request: Request):
     user_id = verify_access_token(token)
     return user_id
 
-@router.patch("/product/{item_id}")
-async def update_item(item_id: str, update: ProductUpdate, user_id: dict = Depends(get_current_user_id)):
-    try: 
-        logger.info(f"Updating item with ID: {item_id}")
-        existing_item = items_collection.find_one({"_id": ObjectId(item_id)})
-        if not existing_item:
-            logger.error("item not found")
-            raise HTTPException(status_code= 404, detail= "Item not found")
-    
-        if str(existing_item["seller_id"]) != str(user_id):
-            raise HTTPException(status_code=403, detail="Not authorized to edit this product")
-    
-        update_data = update.model_dump(exclude_unset=True) 
-        if "images" in update_data:
-            update_data["images"] = [str(url) for url in update_data["images"]]
-
-        items_collection.update_one(
-            {"_id": ObjectId(item_id)}, 
-            {"$set": update_data}
-        )
-        return {"message": "Item updated successfully"}
-    except json.JSONDecodeError:
-        logger.error("Invalid JSON format")
-        raise HTTPException(status_code=400, detail="Invalid JSON format")
-    except Exception as e:
-        logger.error(f"Error updating item: {str(e)}")
-        raise HTTPException(status_code=500, detail="Cannot update item")
+# Removed the PATCH /product/{item_id} endpoint. Item updates are now handled in app/routers/items.py for consistency.

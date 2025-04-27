@@ -6,7 +6,7 @@ from fastapi import Request
 from app.core.security import verify_access_token
 from ..config import user_collection, items_collection
 from bson import ObjectId
-
+from fastapi import Depends
 router = APIRouter()
 
 @router.get("/@me")
@@ -40,9 +40,24 @@ async def get_users():
     return []
 
 
-@router.get("/{user_id}", response_model=UserRead)
+@router.get("/{user_id}")
 async def get_user(user_id: str):
-    # TODO: Implement get single user
+    try:
+        logger.info(f"Finding user in MongoDB with ID: {user_id}")
+        object_id = ObjectId(user_id) 
+        user = user_collection.find_one({"_id": object_id})
+        if user is None:
+            logger.error("Unable to find user")
+            raise HTTPException(status_code=404, detail="User not found")
+        logger.info("Fetching user")
+        user['_id'] = str(user['_id'])
+        return {"message": "User retrieved successfully", "data": user}
+    except errors.InvalidId: 
+        logger.error(f"Invalid ObjectId format: {user_id}")
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
+    except Exception as e:
+        logger.error(f"Unexpected error retrieving user: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
     pass
 
 

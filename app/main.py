@@ -15,7 +15,7 @@ def create_app() -> FastAPI:
     app.include_router(items.router, prefix="/items", tags=["Items"])
     app.include_router(reviews.router, prefix= "/reviews", tags=["Reviews"])
     app.include_router(websocket.router, prefix = "/ws", tags=["ws"])
-    app.include_router(conversation.router, prefix="/convo", tags=["convo"])
+    app.include_router(conversation.router, prefix="/conversations", tags=["conversations"])
     app.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace"])
     app.include_router(reports.router, prefix="/reports", tags={"Reports"})
     app.include_router(admin.router, prefix= "/admin", tags={"Admin"})

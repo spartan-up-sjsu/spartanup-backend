@@ -98,23 +98,28 @@ def google_callback(code: str = None):
         tokens = create_jwt_session(user_id)
         response.set_cookie(
             key="access_token",
-            value= tokens["access_token"],
+            value=tokens["access_token"],
             httponly=True,
-            secure= False,
-            max_age= 10*6,
-            samesite="lax",
-            domain="localhost"
+            max_age=10*6,
+            samesite="none",
+            secure=False,
+            path="/",
+            domain=None,
         )
+
 
         response.set_cookie(
             key="refresh_token",
             value=tokens["refresh_token"],
             httponly=True,
-            secure=False,  
-            max_age= 10 * 365 * 24 * 60 * 60, 
-            samesite="lax",
-            domain="localhost"
+            max_age=10 * 365 * 24 * 60 * 60,
+            samesite="none",
+            secure=False,
+            path="/",
+            domain=None,
         )
+
+        logger.info("Setting cookies", tokens["access_token"])
 
         cookies_collection.update_one(
             {"user_id": user_id},
@@ -125,7 +130,7 @@ def google_callback(code: str = None):
                     "created_at": datetime.now(timezone.utc)
                 }
             },
-        upsert=True
+            upsert=True
         )
 
         return response
@@ -145,11 +150,11 @@ async def signout(request: Request):
     if user_id:
         logger.info(f"Deleted token record for user")
         cookies_collection.delete_one({"user_id": user_id})
-    response = JSONResponse ({"message": "Signout Successfully"})
-    response.delete_cookie("access_token", domain="localhost", path="/")
-    response.delete_cookie("refresh_token", domain="localhost", path="/")
-    return response 
-    
+    response = JSONResponse({"message": "Signout Successfully"})
+    response.delete_cookie("access_token", path="/", domain=None)
+    response.delete_cookie("refresh_token", path="/", domain=None)
+    return response
+
 
 @router.get("/refresh", tags=["Auth"])
 async def refresh_token(request: Request):
@@ -171,11 +176,13 @@ async def refresh_token(request: Request):
         response = JSONResponse({"message": "Access token refreshed successfully"})
         response.set_cookie(
             key="access_token",
-            value= new_access_tokens,
+            value=new_access_tokens,
             httponly=True,
-            secure= True,
-            max_age= 60*10,
+            secure=False,
+            max_age=60*10,
             samesite="none",
+            path="/",
+            domain=None,
         )
         return response
     except Exception as e:

@@ -18,7 +18,7 @@ def get_secret_key() -> str:
         salt=b"spartanup_static_salt", 
         iterations=480000,
     )
-    key = base64.urlsafe_b64encode(kdf.derive(settings.SECRET_KEY.encode()))
+    key = base64.urlsafe_b64encode(kdf.derive(settings.JWT_SECRET_KEY.encode()))
     return key.decode() 
 
 # Create a Fernet instance for encryption/decryption.

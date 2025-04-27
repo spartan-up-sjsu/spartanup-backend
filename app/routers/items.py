@@ -11,6 +11,7 @@ import cloudinary.uploader
 import json
 from typing import Optional
 from app.core.security import verify_access_token
+from app.routers.api import get_current_user_id
 
 router = APIRouter()
 
@@ -45,9 +46,8 @@ async def get_item(item_id: str):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-
 @router.post("/")
-async def create_item(item: str = Form(...), files: List[UploadFile] = File(...)):
+async def create_item(item: str = Form(...), files: List[UploadFile] = File(...), user_id = Depends(get_current_user_id)):
     try: 
         logger.info("Creating items")
         images = []
@@ -61,7 +61,7 @@ async def create_item(item: str = Form(...), files: List[UploadFile] = File(...)
             logger.info("Image uploaded")
         validated_item_dict = validated_item.model_dump()
         validated_item_dict["images"] = images
-        validated_item_dict["seller_id"] = ObjectId(validated_item_dict["seller_id"])
+        validated_item_dict["seller_id"] = user_id
         logger.info("Inserting item to mongodb")
         items_collection.insert_one(validated_item_dict)
         return {"message": "Item created successfully"}

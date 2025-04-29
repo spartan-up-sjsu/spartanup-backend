@@ -17,7 +17,9 @@ class Settings(BaseSettings):
     CLOUDINARY_API_SECRET: str | None = os.getenv("CLOUDINARY_API_SECRET")
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
-    GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/google/callback")
+    GOOGLE_REDIRECT_URI: str = os.getenv(
+        "GOOGLE_REDIRECT_URI", "http://localhost:8000/google/callback"
+    )
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "mysecret")
     FRONTEND_CALLBACK_URL: str
     ENV: str = os.getenv("ENV", "development")

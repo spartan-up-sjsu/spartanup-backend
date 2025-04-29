@@ -53,6 +53,7 @@ logger = logging.getLogger("spartan-up (backend)")
 db = client.spartan_up
 items_collection = db.items
 user_collection = db.users
+preferences_collection = db.preferences
 reviews_collection = db.reviews
 conversations_collection = db.conversations
 messages_collection = db.messages

@@ -95,13 +95,6 @@ def google_callback(code: str = None):
             new_user = user_data.copy()
             new_user["_id"] = user_collection.insert_one(user_data).inserted_id
             user_id = str(new_user["_id"])
-            preferences = PreferencesRead(
-                profile_visibility="public",
-                push_notifications=True,
-                email_notifications=True,
-                campus_trading_mode=True,
-                dark_mode=False,
-            )
         else:
             user_id = str(user_record["_id"])
 
@@ -117,7 +110,7 @@ def google_callback(code: str = None):
                 dark_mode=False,
             )
             preferences_collection.insert_one(
-                {"user_id": user_id, "preferences": preferences.model_dump()}
+                {"user_id": ObjectId(user_id), "preferences": preferences.model_dump()}
             )
         user_collection.update_one({"email": email}, {"$set": user_data}, upsert=True)
 

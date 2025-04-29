@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from app.config import user_collection, upload_image
-from app.routers.api import get_current_user_id
+from app.routers.api import get_current_user_id_id
 from app.schemas.preferences_schema import PreferencesUpdate, PreferencesRead
 from bson import ObjectId
 
@@ -8,7 +8,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=PreferencesRead)
-async def get_preferences(user_id: str = Depends(get_current_user_id)):
+async def get_preferences(user_id: str = Depends(get_current_user_id_id)):
     user = user_collection.find_one({"_id": ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -18,7 +18,7 @@ async def get_preferences(user_id: str = Depends(get_current_user_id)):
 
 @router.patch("/", response_model=PreferencesRead)
 async def update_preferences(
-    update: PreferencesUpdate, user_id: str = Depends(get_current_user_id)
+    update: PreferencesUpdate, user_id: str = Depends(get_current_user_id_id)
 ):
     user = user_collection.find_one({"_id": ObjectId(user_id)})
     if not user:
@@ -39,7 +39,7 @@ async def update_preferences(
 
 @router.patch("/image")
 async def update_image(
-    image: UploadFile = File(...), user_id: str = Depends(get_current_user_id)
+    image: UploadFile = File(...), user_id: str = Depends(get_current_user_id_id)
 ):
     user = user_collection.find_one({"_id": ObjectId(user_id)})
     if not user:

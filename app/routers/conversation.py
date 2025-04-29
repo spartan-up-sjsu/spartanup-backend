@@ -1,13 +1,21 @@
 from fastapi import APIRouter, HTTPException, Form
 from bson import ObjectId, errors
 from app.config import logger
-from app.config import conversations_collection, items_collection, messages_collection, user_collection
+from app.config import (
+    conversations_collection,
+    items_collection,
+    messages_collection,
+    user_collection,
+)
 from typing import Optional
 import json
-from app.routers.dependencies import get_current_user
+from app.routers.dependencies import get_current_user_id
 from app.models.conversation_model import Conversation
 from app.models.message_model import Message
-from app.schemas.conversation_schema import list_serialize_conversations, serialize_conversation
+from app.schemas.conversation_schema import (
+    list_serialize_conversations,
+    serialize_conversation,
+)
 from app.schemas.message_schema import list_serialize_messages
 from datetime import datetime
 from app.websocket_manager import ws_manager
@@ -25,52 +33,77 @@ router = APIRouter()
 conversation_cache = {}
 CACHE_EXPIRY = 30  # seconds
 
+
 # Background task to refresh the cache
 async def refresh_conversation_cache(user_id: str):
     try:
         # Fetch conversations directly without going through the endpoint
-        conversations_list = list(conversations_collection.find(
-            {"$or": [{"seller_id": ObjectId(user_id)}, {"buyer_id": ObjectId(user_id)}]}
-        ))
-        
+        conversations_list = list(
+            conversations_collection.find(
+                {
+                    "$or": [
+                        {"seller_id": ObjectId(user_id)},
+                        {"buyer_id": ObjectId(user_id)},
+                    ]
+                }
+            )
+        )
+
         if not conversations_list:
-            conversation_cache[user_id] = {"message": "No conversations found", "data": [], "timestamp": time.time()}
+            conversation_cache[user_id] = {
+                "message": "No conversations found",
+                "data": [],
+                "timestamp": time.time(),
+            }
             return
-            
-        serialized_conversations = [serialize_conversation(conv) for conv in conversations_list]
-        
+
+        serialized_conversations = [
+            serialize_conversation(conv) for conv in conversations_list
+        ]
+
         # Process in batches to avoid overwhelming the database
         batch_size = 10
         for i in range(0, len(conversations_list), batch_size):
-            batch = conversations_list[i:i+batch_size]
+            batch = conversations_list[i : i + batch_size]
             tasks = []
-            
+
             for conversation in batch:
                 tasks.append(fetch_seller_details(conversation["seller_id"]))
                 tasks.append(fetch_latest_message(conversation["_id"]))
-            
+
             results = await asyncio.gather(*tasks)
-            
-            for j, conv_index in enumerate(range(i, min(i+batch_size, len(serialized_conversations)))):
+
+            for j, conv_index in enumerate(
+                range(i, min(i + batch_size, len(serialized_conversations)))
+            ):
                 seller_index = j * 2
                 message_index = j * 2 + 1
-                
-                serialized_conversations[conv_index]["seller_details"] = results[seller_index]
-                serialized_conversations[conv_index]["latest_message"] = results[message_index]
-        
+
+                serialized_conversations[conv_index]["seller_details"] = results[
+                    seller_index
+                ]
+                serialized_conversations[conv_index]["latest_message"] = results[
+                    message_index
+                ]
+
         # Update the cache
         conversation_cache[user_id] = {
-            "message": "Conversations retrieved successfully", 
+            "message": "Conversations retrieved successfully",
             "data": serialized_conversations,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
         logger.info(f"Cache refreshed for user {user_id}")
     except Exception as e:
         logger.error(f"Error refreshing cache for user {user_id}: {str(e)}")
 
+
 @router.post("/")
-async def create_conversation(item_id: str = Form(...), initial_message: str = Form(...), user_id = Depends(get_current_user)):
-    try: 
+async def create_conversation(
+    item_id: str = Form(...),
+    initial_message: str = Form(...),
+    user_id=Depends(get_current_user_id),
+):
+    try:
         logger.info("Creating conversation")
         item = items_collection.find_one({"_id": ObjectId(item_id)})
         if item is None:
@@ -80,12 +113,14 @@ async def create_conversation(item_id: str = Form(...), initial_message: str = F
         # Check if buyer is trying to create a conversation with themselves (as the seller)
         if str(user_id) == str(item["seller_id"]):
             logger.error("Cannot create conversation with yourself")
-            raise HTTPException(status_code=400, detail="Cannot create conversation with yourself")
+            raise HTTPException(
+                status_code=400, detail="Cannot create conversation with yourself"
+            )
 
         conversation = Conversation(
-            item_id=str(item_id),  
-            seller_id=str(item["seller_id"]), 
-            buyer_id=str(user_id)
+            item_id=str(item_id),
+            seller_id=str(item["seller_id"]),
+            buyer_id=str(user_id),
         )
 
         conversation_data = conversation.model_dump()
@@ -98,68 +133,81 @@ async def create_conversation(item_id: str = Form(...), initial_message: str = F
 
         # Sending initial message
         message = Message(
-            conversation_id=conversation_id,
-            sender_id=user_id,
-            message=initial_message
+            conversation_id=conversation_id, sender_id=user_id, message=initial_message
         )
         message_data = message.model_dump()
         message_data["conversation_id"] = ObjectId(message_data["conversation_id"])
         message_data["sender_id"] = ObjectId(message_data["sender_id"])
         messages_collection.insert_one(message_data)
 
-        await ws_manager.send_message(str(user_id), {
-            "type": "notification",
-            "message": "New conversation started",
-            "conversation_id": conversation_id,  
-            "item_id": str(conversation.item_id),  
-            "seller_id": str(conversation.seller_id),  
-            "created_at": datetime.utcnow().isoformat()
-        })
+        await ws_manager.send_message(
+            str(user_id),
+            {
+                "type": "notification",
+                "message": "New conversation started",
+                "conversation_id": conversation_id,
+                "item_id": str(conversation.item_id),
+                "seller_id": str(conversation.seller_id),
+                "created_at": datetime.utcnow().isoformat(),
+            },
+        )
         return {"message": "Conversation created", "conversation_id": conversation_id}
-    except json.JSONDecodeError as e: 
+    except json.JSONDecodeError as e:
         logger.error("Invalid JSON format")
-        raise HTTPException(status_code=400, detail="Invalid JSON format") 
-    except errors.InvalidId: 
+        raise HTTPException(status_code=400, detail="Invalid JSON format")
+    except errors.InvalidId:
         logger.error("Invalid conversation ID format")
         raise HTTPException(status_code=400, detail="Invalid conversation ID format")
     except Exception as e:
-        logger.error("Error creating conversation: " + str(e)) 
+        logger.error("Error creating conversation: " + str(e))
         raise HTTPException(status_code=500, detail="Cannot create conversation")
 
 
-#this function sends a message to a conversation
+# this function sends a message to a conversation
 @router.post("/{conversation_id}")
-async def send_message(conversation_id: str, message: str = Form(...), sender_id = Depends(get_current_user)):
+async def send_message(
+    conversation_id: str,
+    message: str = Form(...),
+    sender_id=Depends(get_current_user_id),
+):
     try:
         logger.info(f"Sending message to conversation with ID: {conversation_id}")
-        conversation = conversations_collection.find_one({"_id": ObjectId(conversation_id)})
+        conversation = conversations_collection.find_one(
+            {"_id": ObjectId(conversation_id)}
+        )
         if conversation is None:
             logger.error("Conversation not found")
             raise HTTPException(status_code=404, detail="Conversation not found")
-        
+
         recipient_id = (
-            str(conversation["seller_id"]) if sender_id == str(conversation["buyer_id"]) else str(conversation["buyer_id"])
+            str(conversation["seller_id"])
+            if sender_id == str(conversation["buyer_id"])
+            else str(conversation["buyer_id"])
         )
         message = Message(
             conversation_id=conversation_id,  # This will stay a string for validation
             sender_id=str(sender_id),  # Convert ObjectId to string for validation
-            message=message
+            message=message,
         )
-        
+
         # Insert the message into MongoDB with ObjectId
         message_data = message.dict()
-        message_data["conversation_id"] = ObjectId(message_data["conversation_id"])  # Convert to ObjectId for MongoDB
-        message_data["sender_id"] = ObjectId(message_data["sender_id"])  # Convert to ObjectId for MongoDB
+        message_data["conversation_id"] = ObjectId(
+            message_data["conversation_id"]
+        )  # Convert to ObjectId for MongoDB
+        message_data["sender_id"] = ObjectId(
+            message_data["sender_id"]
+        )  # Convert to ObjectId for MongoDB
 
         messages_collection.insert_one(message_data)
-        #this is where the notification should go, using websockets example json payload here with multiplexing in mine:
+        # this is where the notification should go, using websockets example json payload here with multiplexing in mine:
         notification_payload = {
             "type": "message",
             "data": {
                 "conversation_id": str(message.conversation_id),
                 "sender_id": str(message.sender_id),
-                "message": message.message
-            }
+                "message": message.message,
+            },
         }
         await ws_manager.send_message(recipient_id, notification_payload)
         return {"message": "Message sent successfully"}
@@ -167,32 +215,35 @@ async def send_message(conversation_id: str, message: str = Form(...), sender_id
         logger.error("Invalid conversation ID format")
         raise HTTPException(status_code=400, detail="Invalid conversation ID format")
 
-#this function retrieves all conversations for a specific user from the database
+
+# this function retrieves all conversations for a specific user from the database
 @router.get("/")
 async def get_conversations(
     background_tasks: BackgroundTasks,
-    user_id = Depends(get_current_user),
+    user_id=Depends(get_current_user_id),
     limit: int = Query(50, ge=1, le=100),
     skip: int = Query(0, ge=0),
-    force_refresh: bool = Query(False)
+    force_refresh: bool = Query(False),
 ):
     try:
-        logger.info(f"Retrieving conversations for user {user_id} (limit: {limit}, skip: {skip})")
-        
+        logger.info(
+            f"Retrieving conversations for user {user_id} (limit: {limit}, skip: {skip})"
+        )
+
         # Check if we have a valid cache entry
         cache_entry = conversation_cache.get(user_id)
         cache_valid = (
-            cache_entry is not None and 
-            time.time() - cache_entry["timestamp"] < CACHE_EXPIRY and
-            not force_refresh
+            cache_entry is not None
+            and time.time() - cache_entry["timestamp"] < CACHE_EXPIRY
+            and not force_refresh
         )
-        
+
         # If we have a valid cache entry, use it
         if cache_valid:
             logger.info(f"Using cached conversations for user {user_id}")
-            data = cache_entry["data"][skip:skip+limit]
+            data = cache_entry["data"][skip : skip + limit]
             return {"message": "Conversations retrieved successfully", "data": data}
-        
+
         # If no valid cache, fetch from database with aggregation pipeline
         # This does everything in a single MongoDB query
         pipeline = [
@@ -200,36 +251,30 @@ async def get_conversations(
             {
                 "$match": {
                     "$or": [
-                        {"seller_id": ObjectId(user_id)}, 
-                        {"buyer_id": ObjectId(user_id)}
+                        {"seller_id": ObjectId(user_id)},
+                        {"buyer_id": ObjectId(user_id)},
                     ]
                 }
             },
             # Sort by updated_at or created_at to get most recent conversations first
-            {
-                "$sort": {"updated_at": -1}
-            },
+            {"$sort": {"updated_at": -1}},
             # Apply pagination
-            {
-                "$skip": skip
-            },
-            {
-                "$limit": limit
-            },
+            {"$skip": skip},
+            {"$limit": limit},
             # Lookup to get the seller details
             {
                 "$lookup": {
                     "from": "users",
                     "localField": "seller_id",
                     "foreignField": "_id",
-                    "as": "seller_details"
+                    "as": "seller_details",
                 }
             },
             # Unwind the seller_details array (will be empty if no seller found)
             {
                 "$unwind": {
                     "path": "$seller_details",
-                    "preserveNullAndEmptyArrays": True
+                    "preserveNullAndEmptyArrays": True,
                 }
             },
             # Lookup to get the item details
@@ -238,16 +283,11 @@ async def get_conversations(
                     "from": "items",
                     "localField": "item_id",
                     "foreignField": "_id",
-                    "as": "item_details"
+                    "as": "item_details",
                 }
             },
             # Unwind the item_details array (will be empty if no item found)
-            {
-                "$unwind": {
-                    "path": "$item_details",
-                    "preserveNullAndEmptyArrays": True
-                }
-            },
+            {"$unwind": {"path": "$item_details", "preserveNullAndEmptyArrays": True}},
             # Lookup to get the latest message
             {
                 "$lookup": {
@@ -259,21 +299,17 @@ async def get_conversations(
                                 "$expr": {"$eq": ["$conversation_id", "$$conv_id"]}
                             }
                         },
-                        {
-                            "$sort": {"timestamp": -1, "created_at": -1}
-                        },
-                        {
-                            "$limit": 1
-                        }
+                        {"$sort": {"timestamp": -1, "created_at": -1}},
+                        {"$limit": 1},
                     ],
-                    "as": "latest_messages"
+                    "as": "latest_messages",
                 }
             },
             # Unwind the latest_messages array (will be empty if no messages)
             {
                 "$unwind": {
                     "path": "$latest_messages",
-                    "preserveNullAndEmptyArrays": True
+                    "preserveNullAndEmptyArrays": True,
                 }
             },
             # Project only the fields we need
@@ -290,15 +326,15 @@ async def get_conversations(
                         "_id": "$seller_details._id",
                         "email": "$seller_details.email",
                         "name": "$seller_details.name",
-                        "picture": "$seller_details.picture"
+                        "picture": "$seller_details.picture",
                     },
                     "item_details": {
                         "_id": "$item_details._id",
                         "title": "$item_details.title",
                         "price": "$item_details.price",
-                        "image": { "$arrayElemAt": ["$item_details.images", 0] },
+                        "image": {"$arrayElemAt": ["$item_details.images", 0]},
                         "images": "$item_details.images",
-                        "condition": "$item_details.condition"
+                        "condition": "$item_details.condition",
                     },
                     "latest_message": {
                         "_id": "$latest_messages._id",
@@ -306,48 +342,57 @@ async def get_conversations(
                         "message": "$latest_messages.message",
                         "content": "$latest_messages.content",
                         "created_at": "$latest_messages.created_at",
-                        "timestamp": "$latest_messages.timestamp"
-                    }
+                        "timestamp": "$latest_messages.timestamp",
+                    },
                 }
-            }
+            },
         ]
-        
+
         # Execute the aggregation pipeline
         try:
             conversations_with_details = await asyncio.to_thread(
-                list,
-                conversations_collection.aggregate(pipeline)
+                list, conversations_collection.aggregate(pipeline)
             )
-            logger.debug(f"Aggregation pipeline returned {len(conversations_with_details)} conversations")
+            logger.debug(
+                f"Aggregation pipeline returned {len(conversations_with_details)} conversations"
+            )
         except Exception as e:
             logger.error(f"Error in aggregation pipeline: {str(e)}")
             # Fall back to the previous method if aggregation fails
             return await get_conversations_fallback(user_id, limit, skip)
-        
+
         if not conversations_with_details:
             # Schedule a background refresh for next time
             background_tasks.add_task(refresh_conversation_cache, user_id)
             return {"message": "No conversations found", "data": []}
-        
+
         # Serialize the results
         serialized_conversations = []
         for conv in conversations_with_details:
             serialized_conv = serialize_conversation(conv)
-            
+
             # Handle seller details
-            if "seller_details" in conv and conv["seller_details"] and "_id" in conv["seller_details"]:
+            if (
+                "seller_details" in conv
+                and conv["seller_details"]
+                and "_id" in conv["seller_details"]
+            ):
                 seller_details = conv["seller_details"]
                 serialized_conv["seller_details"] = {
                     "id": str(seller_details["_id"]),
                     "email": seller_details.get("email", ""),
                     "name": seller_details.get("name", ""),
-                    "picture": seller_details.get("picture", "")
+                    "picture": seller_details.get("picture", ""),
                 }
             else:
                 serialized_conv["seller_details"] = None
-            
+
             # Handle item details
-            if "item_details" in conv and conv["item_details"] and "_id" in conv["item_details"]:
+            if (
+                "item_details" in conv
+                and conv["item_details"]
+                and "_id" in conv["item_details"]
+            ):
                 item_details = conv["item_details"]
                 serialized_conv["item_details"] = {
                     "id": str(item_details["_id"]),
@@ -355,80 +400,114 @@ async def get_conversations(
                     "price": item_details.get("price", 0),
                     "image": item_details.get("image", ""),
                     "images": item_details.get("images", []),
-                    "condition": item_details.get("condition", "")
+                    "condition": item_details.get("condition", ""),
                 }
             else:
                 serialized_conv["item_details"] = None
-            
+
             # Handle latest message
-            if "latest_message" in conv and conv["latest_message"] and "_id" in conv["latest_message"]:
+            if (
+                "latest_message" in conv
+                and conv["latest_message"]
+                and "_id" in conv["latest_message"]
+            ):
                 latest_msg = conv["latest_message"]
                 content = latest_msg.get("message", latest_msg.get("content", ""))
-                timestamp = latest_msg.get("timestamp", latest_msg.get("created_at", ""))
-                
+                timestamp = latest_msg.get(
+                    "timestamp", latest_msg.get("created_at", "")
+                )
+
                 serialized_conv["latest_message"] = {
                     "id": str(latest_msg["_id"]),
                     "sender_id": str(latest_msg["sender_id"]),
                     "content": content,
-                    "timestamp": timestamp.isoformat() if isinstance(timestamp, datetime) else str(timestamp)
+                    "timestamp": (
+                        timestamp.isoformat()
+                        if isinstance(timestamp, datetime)
+                        else str(timestamp)
+                    ),
                 }
             else:
                 serialized_conv["latest_message"] = None
-            
+
             serialized_conversations.append(serialized_conv)
-        
+
         # Update the cache with the results
         # We're only caching what we've fetched, not the full dataset
         conversation_cache[user_id] = {
             "message": "Conversations retrieved successfully",
             "data": serialized_conversations,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
-        
+
         # Schedule a background refresh of the full cache if needed
         if len(serialized_conversations) == limit:  # There might be more data
             background_tasks.add_task(refresh_conversation_cache, user_id)
-        
-        return {"message": "Conversations retrieved successfully", "data": serialized_conversations}
+
+        return {
+            "message": "Conversations retrieved successfully",
+            "data": serialized_conversations,
+        }
     except Exception as e:
         logger.error(f"Unable to retrieve conversations: {str(e)}")
         # Fall back to the previous method if anything goes wrong
         return await get_conversations_fallback(user_id, limit, skip)
 
+
 # Fallback method in case the aggregation pipeline fails
 async def get_conversations_fallback(user_id, limit, skip):
     try:
-        logger.info(f"Using fallback method to retrieve conversations for user {user_id}")
-        
+        logger.info(
+            f"Using fallback method to retrieve conversations for user {user_id}"
+        )
+
         # Get conversations with pagination
-        conversations_list = list(conversations_collection.find(
-            {"$or": [{"seller_id": ObjectId(user_id)}, {"buyer_id": ObjectId(user_id)}]}
-        ).sort("updated_at", -1).skip(skip).limit(limit))
-        
+        conversations_list = list(
+            conversations_collection.find(
+                {
+                    "$or": [
+                        {"seller_id": ObjectId(user_id)},
+                        {"buyer_id": ObjectId(user_id)},
+                    ]
+                }
+            )
+            .sort("updated_at", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+
         if not conversations_list:
             return {"message": "No conversations found", "data": []}
-            
-        serialized_conversations = [serialize_conversation(conv) for conv in conversations_list]
-        
+
+        serialized_conversations = [
+            serialize_conversation(conv) for conv in conversations_list
+        ]
+
         # Fetch details concurrently
         tasks = []
         for conversation in conversations_list:
             tasks.append(fetch_seller_details(conversation["seller_id"]))
             tasks.append(fetch_latest_message(conversation["_id"]))
-        
+
         results = await asyncio.gather(*tasks)
-        
+
         for i, serialized_conv in enumerate(serialized_conversations):
             seller_index = i * 2
             message_index = i * 2 + 1
-            
+
             serialized_conv["seller_details"] = results[seller_index]
             serialized_conv["latest_message"] = results[message_index]
-        
-        return {"message": "Conversations retrieved successfully", "data": serialized_conversations}
+
+        return {
+            "message": "Conversations retrieved successfully",
+            "data": serialized_conversations,
+        }
     except Exception as e:
         logger.error(f"Fallback method failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Cannot retrieve conversations: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Cannot retrieve conversations: {str(e)}"
+        )
+
 
 # Helper function to fetch seller details
 async def fetch_seller_details(seller_id):
@@ -439,9 +518,10 @@ async def fetch_seller_details(seller_id):
             "id": str(seller["_id"]),
             "email": seller.get("email", ""),
             "name": seller.get("name", ""),
-            "picture": seller.get("picture", "")
+            "picture": seller.get("picture", ""),
         }
     return None
+
 
 # Helper function to fetch latest message
 async def fetch_latest_message(conversation_id):
@@ -449,57 +529,77 @@ async def fetch_latest_message(conversation_id):
     latest_message = await asyncio.to_thread(
         lambda: messages_collection.find_one(
             {"conversation_id": conversation_id},
-            sort=[("timestamp", -1)]  # Sort by timestamp in descending order to get the latest message
+            sort=[
+                ("timestamp", -1)
+            ],  # Sort by timestamp in descending order to get the latest message
         )
     )
-    
+
     if latest_message:
         return {
             "id": str(latest_message["_id"]),
             "sender_id": str(latest_message["sender_id"]),
-            "content": latest_message.get("message", ""),  # Handle different field names
-            "timestamp": latest_message.get("timestamp", latest_message.get("created_at", "")).isoformat() 
-            if isinstance(latest_message.get("timestamp", latest_message.get("created_at", "")), datetime) 
-            else str(latest_message.get("timestamp", latest_message.get("created_at", "")))
+            "content": latest_message.get(
+                "message", ""
+            ),  # Handle different field names
+            "timestamp": (
+                latest_message.get(
+                    "timestamp", latest_message.get("created_at", "")
+                ).isoformat()
+                if isinstance(
+                    latest_message.get(
+                        "timestamp", latest_message.get("created_at", "")
+                    ),
+                    datetime,
+                )
+                else str(
+                    latest_message.get(
+                        "timestamp", latest_message.get("created_at", "")
+                    )
+                )
+            ),
         }
     return None
 
-#this function retrieves a conversation from the database, along side with the messages
+
+# this function retrieves a conversation from the database, along side with the messages
 @router.get("/{conversation_id}")
 async def get_conversation(conversation_id: str):
     try:
         logger.info(f"Finding conversation in MongoDB with ID: {conversation_id}")
         object_id = ObjectId(conversation_id)
-        
+
         # Run database operations concurrently
         tasks = [
             asyncio.to_thread(conversations_collection.find_one, {"_id": object_id}),
-            asyncio.to_thread(list, messages_collection.find({"conversation_id": object_id}))
+            asyncio.to_thread(
+                list, messages_collection.find({"conversation_id": object_id})
+            ),
         ]
-        
+
         # Wait for all tasks to complete
         conversation, messages = await asyncio.gather(*tasks)
-        
+
         if conversation is None:
             logger.error("Unable to find conversation")
             raise HTTPException(status_code=404, detail="Conversation not found")
-        
+
         # Get seller details asynchronously
         seller_id = conversation["seller_id"]
         seller = await asyncio.to_thread(user_collection.find_one, {"_id": seller_id})
-        
+
         seller_details = None
         if seller:
             seller_details = {
                 "id": str(seller["_id"]),
                 "email": seller.get("email", ""),
                 "name": seller.get("name", ""),
-                "picture": seller.get("picture", "")
+                "picture": seller.get("picture", ""),
             }
-        
+
         # Process messages
         serialized_messages = list_serialize_messages(messages)
-        
+
         # Get latest message
         latest_message = None
         if serialized_messages:
@@ -507,21 +607,21 @@ async def get_conversation(conversation_id: str):
             sorted_messages = sorted(serialized_messages, key=lambda x: x["created_at"])
             if sorted_messages:
                 latest_message = sorted_messages[-1]
-        
+
         # Serialize conversation
         serialized_conversation = serialize_conversation(conversation)
-        
+
         # Add seller details and latest message
         serialized_conversation["seller_details"] = seller_details
         serialized_conversation["latest_message"] = latest_message
-        
+
         logger.info("Fetching conversation with messages")
         return {
             "message": "Conversation and messages retrieved successfully",
             "data": {
                 "conversation": serialized_conversation,
-                "messages": serialized_messages
-            }
+                "messages": serialized_messages,
+            },
         }
     except errors.InvalidId:
         logger.error(f"Invalid ObjectId format: {conversation_id}")
@@ -530,7 +630,8 @@ async def get_conversation(conversation_id: str):
         logger.error(f"Unexpected error retrieving conversation: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-#this function deletes a conversation from the database
+
+# this function deletes a conversation from the database
 @router.delete("/{conversation_id}")
 async def delete_conversation(conversation_id: str):
     try:
@@ -540,7 +641,7 @@ async def delete_conversation(conversation_id: str):
             logger.error("Conversation not found")
             raise HTTPException(status_code=404, detail="Conversation not found")
         return {"message": "Conversation deleted successfully"}
-    except errors.InvalidId: 
+    except errors.InvalidId:
         logger.error(f"Invalid ObjectId format: {conversation_id}")
         raise HTTPException(status_code=400, detail="Invalid conversation ID format")
     except Exception as e:

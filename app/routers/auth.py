@@ -99,7 +99,7 @@ def google_callback(code: str = None):
             user_id = str(user_record["_id"])
 
         # fetch user preferences
-        user_preferences = preferences_collection.find_one({"user_id": user_id})
+        user_preferences = preferences_collection.find_one({"user_id": ObjectId(user_id)})
 
         if not user_preferences:
             preferences = PreferencesRead(

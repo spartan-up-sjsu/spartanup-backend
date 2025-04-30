@@ -10,9 +10,9 @@ class PreferencesRead(BaseModel):
     phone_number: Optional[str] = None
 
 class PreferencesUpdate(BaseModel):
-    profile_visibility: Optional[str] = None
-    push_notifications: Optional[bool] = None
-    email_notifications: Optional[bool] = None
-    campus_trading_mode: Optional[bool] = None
-    dark_mode: Optional[bool] = None
+    profile_visibility: Optional[str] = "public"
+    push_notifications: Optional[bool] = True
+    email_notifications: Optional[bool] = True
+    campus_trading_mode: Optional[bool] = True
+    dark_mode: Optional[bool] = False
     phone_number: Optional[str] = None

@@ -121,7 +121,7 @@ def google_callback(code: str = None):
         response.set_cookie(
             key="access_token",
             value=tokens["access_token"],
-            httponly=True,
+            httponly=False,
             max_age=7 * 24 * 60 * 60,
             samesite="Lax",
             secure=False,
@@ -132,7 +132,7 @@ def google_callback(code: str = None):
         response.set_cookie(
             key="refresh_token",
             value=tokens["refresh_token"],
-            httponly=True,
+            httponly=False,
             max_age=10 * 365 * 24 * 60 * 60,
             samesite="Lax",
             secure=False,

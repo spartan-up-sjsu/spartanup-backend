@@ -90,6 +90,7 @@ def google_callback(code: str = None):
             "last_login": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
             "is_admin": False,
+            "is_banned": False,
         }
         if not user_record:
             new_user = user_data.copy()
@@ -97,9 +98,24 @@ def google_callback(code: str = None):
             user_id = str(new_user["_id"])
         else:
             user_id = str(user_record["_id"])
+            # Only update specific fields on sign-in, preserving others
+            update_data = {
+                "last_login": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
+            # Only update picture if it's not a Cloudinary URL
+            if update_picture:
+                update_data["picture"] = google_picture
+            # Only update refresh token if it's not present
+            if not user_record.get("google_refresh_token"):
+                update_data["google_refresh_token"] = token.get("refresh_token")
+
+            user_collection.update_one({"email": email}, {"$set": update_data})
 
         # fetch user preferences
-        user_preferences = preferences_collection.find_one({"user_id": ObjectId(user_id)})
+        user_preferences = preferences_collection.find_one(
+            {"user_id": ObjectId(user_id)}
+        )
 
         if not user_preferences:
             preferences = PreferencesRead(
@@ -112,7 +128,6 @@ def google_callback(code: str = None):
             preferences_collection.insert_one(
                 {"user_id": ObjectId(user_id), "preferences": preferences.model_dump()}
             )
-        user_collection.update_one({"email": email}, {"$set": user_data}, upsert=True)
 
         response = RedirectResponse(callBackURL)
         tokens = create_jwt_session(user_id)

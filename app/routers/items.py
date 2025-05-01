@@ -236,7 +236,7 @@ async def update_item(
         logger.error(f"Error updating item {item_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Cannot update item")
 
-
+# Example response: {"message":"Inquiries retrieved successfully","data":[{"status":"inprogress","created_at":"2025-05-01T02:06:31.530000","updated_at":"2025-05-01T02:06:31.530000","conversation_id":"6812d76b37f58f25ff60b6ae","buyer":{"_id":"6812bf5ddc3637053b41f4c7","email":"thedrun2004@gmail.com","profile_picture":null,"rating":null}}]}
 @router.get("/{item_id}/inquiries")
 async def get_item_inquiries(
     item_id: str,
@@ -288,9 +288,9 @@ async def get_item_inquiries(
                 "updated_at": 1,
                 "buyer": {
                     "_id": "$buyer_info._id",
-                    "full_name": "$buyer_info.full_name",
+                    "full_name": {"$ifNull": ["$buyer_info.full_name", "$buyer_info.name"]},
                     "email": "$buyer_info.email",
-                    "profile_picture": {"$ifNull": ["$buyer_info.profile_picture", None]},
+                    "picture": {"$ifNull": ["$buyer_info.picture", None]},
                     "rating": {"$ifNull": ["$buyer_info.rating", None]}
                 }
             }},

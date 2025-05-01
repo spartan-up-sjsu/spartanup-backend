@@ -2,24 +2,26 @@ from fastapi import APIRouter, HTTPException
 from ..models.review_model import Review
 from bson import ObjectId
 from app.config import reviews_collection
+from app.routers.api import get_current_user_id_id
+from fastapi import Depends
 
 router = APIRouter()
 
 @router.post("/")
-async def review_post(review: Review):
+async def review_post(review: Review, user_id=Depends(get_current_user_id_id)):
     try: 
         review_data = { 
             "item_id": ObjectId(review.item_id),
-            "reviewer_id": ObjectId(review.reviewer_id),
-            "seller_id": ObjectId(review.seller_id),
+            "reviewer_id": ObjectId(user_id),
             "rating": review.rating,
             "review_text": review.review_text,
-            "tags": [tag.value for tag in review.tags] if review.tags else None
+            "tags": [tag.value for tag in review.tags] if review.tags else None,
+            "review_target": ObjectId(review.review_target)
         }
         reviews_collection.insert_one(review_data)
         return {"message": "Review posted successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail = str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{user_id}")
 def get_user_reviews(user_id: str):
@@ -28,7 +30,7 @@ def get_user_reviews(user_id: str):
     # Aggregation pipeline to get the last 10 reviews with reviewer info
     pipeline = [
         # Match reviews for the specified seller
-        {"$match": {"seller_id": user_object_id}},
+        {"$match": {"review_target": user_object_id}},
         # Sort by most recent first (assuming _id contains timestamp)
         {"$sort": {"_id": -1}},
         # Limit to last 10 reviews

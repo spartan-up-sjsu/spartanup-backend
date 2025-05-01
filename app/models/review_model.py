@@ -12,7 +12,7 @@ class Tags(str, Enum):
 class Review(BaseModel):
     item_id: str
     reviewer_id: str
-    seller_id: str
     rating: int = Field(..., ge=1, le=5)
     review_text: Optional[str] = None
     tags: Optional[List[Tags]] = None
+    review_target: str #id of who we are reviewing

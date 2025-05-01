@@ -76,6 +76,7 @@ async def get_items(
                         }
                     }
                 },
+                {"status": "active"}
             ]
             logger.debug(f"Added search filter for pattern: {search_pattern}")
         if seller_id:

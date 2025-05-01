@@ -217,10 +217,6 @@ async def send_message(
                 "sender_id": str(message.sender_id),
                 "message": message.message,
                 "created_at": current_time.isoformat(),  # Include timestamp in notification
-                "sender_details": {
-                    "name": user_collection.find_one({"_id": ObjectId(sender_id)})["name"],
-                    "profile_picture": user_collection.find_one({"_id": ObjectId(sender_id)})["picture"]
-                }
             },
         }
         await ws_manager.send_message(recipient_id, notification_payload)
@@ -594,67 +590,142 @@ async def get_conversation(conversation_id: str):
     try:
         logger.info(f"Finding conversation in MongoDB with ID: {conversation_id}")
         object_id = ObjectId(conversation_id)
-
-        # Run database operations concurrently
-        tasks = [
-            asyncio.to_thread(conversations_collection.find_one, {"_id": object_id}),
-            asyncio.to_thread(
-                list, messages_collection.find({"conversation_id": object_id})
-            ),
+        
+        # Use aggregation pipeline to get conversation with all related data in one query
+        pipeline = [
+            # Match the specific conversation
+            {"$match": {"_id": object_id}},
+            
+            # Lookup seller details
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "seller_id",
+                    "foreignField": "_id",
+                    "as": "seller_details"
+                }
+            },
+            # Unwind seller details (convert array to object)
+            {"$unwind": {"path": "$seller_details", "preserveNullAndEmptyArrays": True}},
+            
+            # Lookup buyer details
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "buyer_id",
+                    "foreignField": "_id",
+                    "as": "buyer_details"
+                }
+            },
+            # Unwind buyer details
+            {"$unwind": {"path": "$buyer_details", "preserveNullAndEmptyArrays": True}},
+            
+            # Lookup item details
+            {
+                "$lookup": {
+                    "from": "items",
+                    "localField": "item_id",
+                    "foreignField": "_id",
+                    "as": "item_details"
+                }
+            },
+            # Unwind item details
+            {"$unwind": {"path": "$item_details", "preserveNullAndEmptyArrays": True}},
+            
+            # Project only the fields we need
+            {
+                "$project": {
+                    "_id": 1,
+                    "seller_id": 1,
+                    "buyer_id": 1,
+                    "item_id": 1,
+                    "created_at": 1,
+                    "updated_at": 1,
+                    "status": 1,
+                    "seller_details": {
+                        "_id": "$seller_details._id",
+                        "email": "$seller_details.email",
+                        "name": "$seller_details.name",
+                        "picture": "$seller_details.picture",
+                    },
+                    "buyer_details": {
+                        "_id": "$buyer_details._id",
+                        "email": "$buyer_details.email",
+                        "name": "$buyer_details.name",
+                        "picture": "$buyer_details.picture",
+                    },
+                    "item_details": {
+                        "_id": "$item_details._id",
+                        "title": "$item_details.title",
+                        "price": "$item_details.price",
+                        "description": "$item_details.description",
+                        "images": "$item_details.images",
+                        "status": "$item_details.status",
+                        "condition": "$item_details.condition",
+                        "category": "$item_details.category",
+                    }
+                }
+            }
         ]
-
-        # Wait for all tasks to complete
-        conversation, messages = await asyncio.gather(*tasks)
-
-        if conversation is None:
+        
+        # Execute the aggregation pipeline
+        conversation_result = await asyncio.to_thread(
+            lambda: list(conversations_collection.aggregate(pipeline))
+        )
+        
+        if not conversation_result:
             logger.error("Unable to find conversation")
             raise HTTPException(status_code=404, detail="Conversation not found")
-
-        # Get seller details asynchronously
-        seller_id = conversation["seller_id"]
-        seller = await asyncio.to_thread(user_collection.find_one, {"_id": seller_id})
-
-        seller_details = None
-        if seller:
-            seller_details = {
-                "id": str(seller["_id"]),
-                "email": seller.get("email", ""),
-                "name": seller.get("name", ""),
-                "picture": seller.get("picture", ""),
-            }
-
-        # Get buyer details asynchronously
-        buyer_id = conversation["buyer_id"]
-        buyer = await asyncio.to_thread(user_collection.find_one, {"_id": buyer_id})
-
-        buyer_details = None
-        if buyer:
-            buyer_details = {
-                "id": str(buyer["_id"]),
-                "email": buyer.get("email", ""),
-                "name": buyer.get("name", ""),
-                "picture": buyer.get("picture", ""),
-            }
-
+            
+        conversation = conversation_result[0]
+        
+        # Get messages for this conversation
+        messages = await asyncio.to_thread(
+            lambda: list(messages_collection.find({"conversation_id": object_id}).sort("created_at", 1))
+        )
+        
         # Process messages
         serialized_messages = list_serialize_messages(messages)
-
+        
         # Get latest message
         latest_message = None
         if serialized_messages:
-            # Sort messages by created_at
-            sorted_messages = sorted(serialized_messages, key=lambda x: x["created_at"])
-            if sorted_messages:
-                latest_message = sorted_messages[-1]
-
+            latest_message = serialized_messages[-1]  # Already sorted by created_at
+        
         # Serialize conversation
-        serialized_conversation = serialize_conversation(conversation)
-
-        # Add seller details and latest message
-        serialized_conversation["seller_details"] = seller_details
-        serialized_conversation["buyer_details"] = buyer_details
-        serialized_conversation["latest_message"] = latest_message
-
+        serialized_conversation = {
+            "id": str(conversation["_id"]),
+            "seller_id": str(conversation["seller_id"]),
+            "buyer_id": str(conversation["buyer_id"]),
+            "item_id": str(conversation["item_id"]),
+            "created_at": conversation.get("created_at", datetime.utcnow()).isoformat(),
+            "updated_at": conversation.get("updated_at", datetime.utcnow()).isoformat(),
+            "status": conversation.get("status", "active"),
+            "seller_details": {
+                "id": str(conversation["seller_details"]["_id"]) if conversation.get("seller_details") else None,
+                "email": conversation.get("seller_details", {}).get("email", ""),
+                "name": conversation.get("seller_details", {}).get("name", ""),
+                "picture": conversation.get("seller_details", {}).get("picture", ""),
+            } if conversation.get("seller_details") else None,
+            "buyer_details": {
+                "id": str(conversation["buyer_details"]["_id"]) if conversation.get("buyer_details") else None,
+                "email": conversation.get("buyer_details", {}).get("email", ""),
+                "name": conversation.get("buyer_details", {}).get("name", ""),
+                "picture": conversation.get("buyer_details", {}).get("picture", ""),
+            } if conversation.get("buyer_details") else None,
+            "item_details": {
+                "id": str(conversation["item_details"]["_id"]) if conversation.get("item_details") else None,
+                "title": conversation.get("item_details", {}).get("title", ""),
+                "price": conversation.get("item_details", {}).get("price", 0),
+                "description": conversation.get("item_details", {}).get("description", ""),
+                "images": conversation.get("item_details", {}).get("images", []),
+                "status": conversation.get("item_details", {}).get("status", "active"),
+                "condition": conversation.get("item_details", {}).get("condition", ""),
+                "category": conversation.get("item_details", {}).get("category", ""),
+            } if conversation.get("item_details") else None,
+            "latest_message": latest_message
+        }
+        
         logger.info("Fetching conversation with messages")
         return {
             "message": "Conversation and messages retrieved successfully",

@@ -41,6 +41,7 @@ class ProductUpdate(BaseModel):
     price: Optional[float] = None
     condition: Optional[Literal["New", "Like New", "Used", "Poor"]] = None
     description: Optional[str] = None
+    status: Optional[Literal["active", "sold"]] = None
     images: Optional[List[HttpUrl]] = None
     remove_urls: Optional[List[str]] = None
 

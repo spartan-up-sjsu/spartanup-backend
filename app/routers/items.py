@@ -9,7 +9,7 @@ from fastapi import (
     Body,
 )
 from typing import List, Optional
-from app.config import items_collection, user_collection
+from app.config import items_collection, user_collection, conversations_collection
 from app.schemas.item_schema import list_serialize_items
 from bson import ObjectId, errors
 from app.models.item_model import ItemRead, ItemFromDB, ItemCreate, ProductUpdate
@@ -235,3 +235,87 @@ async def update_item(
     except Exception as e:
         logger.error(f"Error updating item {item_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Cannot update item")
+
+
+@router.get("/{item_id}/inquiries")
+async def get_item_inquiries(
+    item_id: str,
+    user_id: str = Depends(get_current_user_id_id),
+):
+    """Get users who have inquired about a specific item.
+    
+    This endpoint uses MongoDB's aggregation pipeline to fetch users who have
+    started conversations about the item, including their profile information.
+    """
+    try:
+        logger.info(f"[GET /items/{item_id}/inquiries] Retrieving inquiries for item: {item_id}")
+        
+        # First, verify the item exists and the requester is the seller
+        item = items_collection.find_one({"_id": ObjectId(item_id)})
+        if not item:
+            logger.error(f"Item {item_id} not found")
+            raise HTTPException(status_code=404, detail="Item not found")
+            
+        if str(item["seller_id"]) != str(user_id):
+            logger.warning(f"User {user_id} not authorized to view inquiries for item {item_id}")
+            raise HTTPException(
+                status_code=403, 
+                detail="Only the seller can view inquiries for this item"
+            )
+        
+        # Use aggregation pipeline to get users who inquired about the item
+        pipeline = [
+            # Match conversations for this item
+            {"$match": {"item_id": ObjectId(item_id)}},
+            
+            # Lookup user information for each buyer
+            {"$lookup": {
+                "from": "users",
+                "localField": "buyer_id",
+                "foreignField": "_id",
+                "as": "buyer_info"
+            }},
+            
+            # Unwind the buyer_info array
+            {"$unwind": "$buyer_info"},
+            
+            # Project only the fields we need
+            {"$project": {
+                "_id": 0,
+                "conversation_id": "$_id",
+                "status": 1,
+                "created_at": 1,
+                "updated_at": 1,
+                "buyer": {
+                    "_id": "$buyer_info._id",
+                    "full_name": "$buyer_info.full_name",
+                    "email": "$buyer_info.email",
+                    "profile_picture": {"$ifNull": ["$buyer_info.profile_picture", None]},
+                    "rating": {"$ifNull": ["$buyer_info.rating", None]}
+                }
+            }},
+            
+            # Sort by most recent first
+            {"$sort": {"updated_at": -1}}
+        ]
+        
+        inquiries = list(conversations_collection.aggregate(pipeline))
+        
+        # Convert ObjectId to string for JSON serialization
+        for inquiry in inquiries:
+            inquiry["conversation_id"] = str(inquiry["conversation_id"])
+            inquiry["buyer"]["_id"] = str(inquiry["buyer"]["_id"])
+            
+        logger.info(f"Found {len(inquiries)} inquiries for item {item_id}")
+        return {
+            "message": "Inquiries retrieved successfully",
+            "data": inquiries
+        }
+        
+    except errors.InvalidId:
+        logger.error(f"Invalid ObjectId format: {item_id}")
+        raise HTTPException(status_code=400, detail="Invalid item ID format")
+    except Exception as e:
+        logger.error(f"Error retrieving inquiries for item {item_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Cannot retrieve inquiries")
+

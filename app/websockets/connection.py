@@ -4,6 +4,7 @@ import asyncio
 import json
 from app.config import logger
 from app.core.security import verify_access_token, decrypt_payload
+from pubsub import pub
 
 class AuthenticatedWebSocket:
     """A wrapper around the FastAPI WebSocket that handles authentication and timeout."""
@@ -15,21 +16,7 @@ class AuthenticatedWebSocket:
         self.authenticated = False
         self.timeout_task: Optional[asyncio.Task] = None
         self.closed = False
-    
-    async def accept(self):
-        """Accept the WebSocket connection and start the authentication timeout."""
-        await self.websocket.accept()
-        logger.debug("WebSocket connection accepted successfully")
-        
-        # Start the authentication timeout
-        self.timeout_task = asyncio.create_task(self._authentication_timeout())
-        
-        # Try to authenticate with token in query params
-        token = self.websocket.query_params.get("token")
-        if token:
-            token_preview = token[:20] + "..." if len(token) > 20 else token
-            logger.debug(f"WebSocket connection with token: {token_preview}")
-            await self.authenticate(token)
+
     
     async def authenticate(self, token: str) -> bool:
         """Authenticate the WebSocket connection using the provided token."""
@@ -50,7 +37,7 @@ class AuthenticatedWebSocket:
                 await self.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
                 return False
             
-            logger.info(f"WebSocket token verified successfully for user {user_id}")
+            logger.info(f"Authenticated WebSocket token verified successfully for user {user_id}")
             
             # Mark as authenticated
             self.user_id = user_id
@@ -59,6 +46,8 @@ class AuthenticatedWebSocket:
             # Cancel the timeout task
             if self.timeout_task and not self.timeout_task.done():
                 self.timeout_task.cancel()
+
+            pub.sendMessage('user_authenticated', user_id=user_id, connection=self)
             
             return True
             

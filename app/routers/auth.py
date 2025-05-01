@@ -68,7 +68,7 @@ def google_callback(code: str = None):
         user_info = resp.json()
 
         email = user_info.get("email")
-        if not email or not email.endswith(".edu"):
+        if not email:
             raise HTTPException(
                 status_code=401, detail="Access denied, user not an edu email"
             )

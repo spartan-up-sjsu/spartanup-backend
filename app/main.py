@@ -78,6 +78,9 @@ def create_app() -> FastAPI:
 
 app = create_app()
 
+if __name__ == "__main__":
+    uvicorn.run(app, host="localhost", port=8000)
+
 # to start: uvicorn app.main:app --reload --host localhost --port 8000
 
 

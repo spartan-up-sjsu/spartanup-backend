@@ -18,11 +18,9 @@ from app.schemas.conversation_schema import (
 )
 from app.schemas.message_schema import list_serialize_messages
 from datetime import datetime
-from app.websocket_manager import ws_manager
+from app.websockets.manager import ws_manager
 import asyncio
-import functools
 from fastapi.params import Depends
-from functools import lru_cache
 from fastapi import Query, Depends, BackgroundTasks
 import time
 
@@ -184,10 +182,16 @@ async def send_message(
             if sender_id == str(conversation["buyer_id"])
             else str(conversation["buyer_id"])
         )
+        
+        # Create timestamp for both fields
+        current_time = datetime.utcnow()
+        
         message = Message(
             conversation_id=conversation_id,  # This will stay a string for validation
             sender_id=str(sender_id),  # Convert ObjectId to string for validation
             message=message,
+            created_at=current_time,
+            updated_at=current_time
         )
 
         # Insert the message into MongoDB with ObjectId
@@ -198,8 +202,13 @@ async def send_message(
         message_data["sender_id"] = ObjectId(
             message_data["sender_id"]
         )  # Convert to ObjectId for MongoDB
+        
+        # Ensure timestamps are included in the database document
+        message_data["created_at"] = current_time
+        message_data["updated_at"] = current_time
 
-        messages_collection.insert_one(message_data)
+        result = messages_collection.insert_one(message_data)
+        
         # this is where the notification should go, using websockets example json payload here with multiplexing in mine:
         notification_payload = {
             "type": "message",
@@ -207,13 +216,21 @@ async def send_message(
                 "conversation_id": str(message.conversation_id),
                 "sender_id": str(message.sender_id),
                 "message": message.message,
+                "created_at": current_time.isoformat(),  # Include timestamp in notification
+                "sender_details": {
+                    "name": user_collection.find_one({"_id": ObjectId(sender_id)})["name"],
+                    "profile_picture": user_collection.find_one({"_id": ObjectId(sender_id)})["picture"]
+                }
             },
         }
         await ws_manager.send_message(recipient_id, notification_payload)
-        return {"message": "Message sent successfully"}
+        return {"message": "Message sent successfully", "message_id": str(result.inserted_id)}
     except errors.InvalidId:
         logger.error("Invalid conversation ID format")
         raise HTTPException(status_code=400, detail="Invalid conversation ID format")
+    except Exception as e:
+        logger.error(f"Error sending message: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to send message")
 
 
 # this function retrieves all conversations for a specific user from the database
@@ -268,6 +285,15 @@ async def get_conversations(
                     "localField": "seller_id",
                     "foreignField": "_id",
                     "as": "seller_details",
+                }
+            },
+            # Lookup to get buyer details
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "buyer_id",
+                    "foreignField": "_id",
+                    "as": "buyer_details",
                 }
             },
             # Unwind the seller_details array (will be empty if no seller found)
@@ -597,6 +623,19 @@ async def get_conversation(conversation_id: str):
                 "picture": seller.get("picture", ""),
             }
 
+        # Get buyer details asynchronously
+        buyer_id = conversation["buyer_id"]
+        buyer = await asyncio.to_thread(user_collection.find_one, {"_id": buyer_id})
+
+        buyer_details = None
+        if buyer:
+            buyer_details = {
+                "id": str(buyer["_id"]),
+                "email": buyer.get("email", ""),
+                "name": buyer.get("name", ""),
+                "picture": buyer.get("picture", ""),
+            }
+
         # Process messages
         serialized_messages = list_serialize_messages(messages)
 
@@ -613,6 +652,7 @@ async def get_conversation(conversation_id: str):
 
         # Add seller details and latest message
         serialized_conversation["seller_details"] = seller_details
+        serialized_conversation["buyer_details"] = buyer_details
         serialized_conversation["latest_message"] = latest_message
 
         logger.info("Fetching conversation with messages")

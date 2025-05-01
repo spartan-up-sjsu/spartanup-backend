@@ -124,7 +124,7 @@ def google_callback(code: str = None):
             httponly=True,
             max_age=7 * 24 * 60 * 60,
             samesite="Lax",
-            secure=settings.ENV == "production",
+            secure=False,
             path="/",
             domain=domain,
         )
@@ -135,7 +135,7 @@ def google_callback(code: str = None):
             httponly=True,
             max_age=10 * 365 * 24 * 60 * 60,
             samesite="Lax",
-            secure=settings.ENV == "production",
+            secure=False,
             path="/",
             domain=domain,
         )

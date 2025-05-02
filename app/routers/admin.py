@@ -164,40 +164,113 @@ async def list_users(
     sort: str = "created_at:desc",
 ):
     try:
-        # Build query
-        query = {}
-        if search:
-            query["$or"] = [
-                {"name": {"$regex": search, "$options": "i"}},
-                {"email": {"$regex": search, "$options": "i"}},
-            ]
-
         # Parse sort parameter
         sort_field, sort_order = sort.split(":")
         sort_direction = -1 if sort_order == "desc" else 1
 
-        # Calculate skip
-        skip = (page - 1) * limit
+        # Build aggregation pipeline
+        pipeline = []
 
-        # Get total count
-        total = user_collection.count_documents(query)
+        # Match stage for search
+        if search:
+            pipeline.append(
+                {
+                    "$match": {
+                        "$or": [
+                            {"name": {"$regex": search, "$options": "i"}},
+                            {"email": {"$regex": search, "$options": "i"}},
+                        ]
+                    }
+                }
+            )
 
-        # Get users
-        users = (
-            user_collection.find(query, {"password": 0})  # Exclude password field
-            .sort(sort_field, sort_direction)
-            .skip(skip)
-            .limit(limit)
+        # Add reports lookup for direct user reports
+        pipeline.append(
+            {
+                "$lookup": {
+                    "from": "reports",
+                    "localField": "_id",
+                    "foreignField": "entity_id",
+                    "as": "user_reports",
+                }
+            }
         )
 
+        # Add items lookup to get user's items
+        pipeline.append(
+            {
+                "$lookup": {
+                    "from": "items",
+                    "localField": "_id",
+                    "foreignField": "seller_id",
+                    "as": "user_items",
+                }
+            }
+        )
+
+        # Add reports lookup for user's items
+        pipeline.append(
+            {
+                "$lookup": {
+                    "from": "reports",
+                    "let": {"user_items": "$user_items._id"},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$in": ["$entity_id", "$$user_items"]}}}
+                    ],
+                    "as": "item_reports",
+                }
+            }
+        )
+
+        # Add report count fields combining both user and item reports
+        pipeline.append(
+            {
+                "$addFields": {
+                    "user_report_count": {"$size": "$user_reports"},
+                    "item_report_count": {"$size": "$item_reports"},
+                    "total_report_count": {
+                        "$add": [{"$size": "$user_reports"}, {"$size": "$item_reports"}]
+                    },
+                }
+            }
+        )
+
+        # Project stage to exclude unnecessary fields
+        pipeline.append(
+            {
+                "$project": {
+                    "password": 0,
+                    "user_reports": 0,
+                    "user_items": 0,
+                    "item_reports": 0,
+                }
+            }
+        )
+
+        # Sort stage
+        pipeline.append({"$sort": {sort_field: sort_direction}})
+
+        # Count total documents
+        count_pipeline = pipeline.copy()
+        count_pipeline.append({"$count": "total"})
+        total_result = list(user_collection.aggregate(count_pipeline))
+        total = total_result[0]["total"] if total_result else 0
+
+        # Add pagination stages
+        pipeline.append({"$skip": (page - 1) * limit})
+        pipeline.append({"$limit": limit})
+
+        # Execute aggregation
+        users = list(user_collection.aggregate(pipeline))
+
         # Convert ObjectId to string
-        users_list = []
         for user in users:
             user["_id"] = str(user["_id"])
-            users_list.append(user)
+            # Rename total_report_count to report_count for consistency
+            user["report_count"] = user.pop("total_report_count")
 
         return AdminResponse.success(
-            data=users_list, meta={"total": total, "page": page, "limit": limit}
+            data=users, meta={"total": total, "page": page, "limit": limit}
         )
 
     except Exception as e:
@@ -296,41 +369,166 @@ async def list_reports(
     admin_check: bool = Depends(checkRole),
     type: Optional[str] = None,
     status: Optional[str] = None,
+    search: Optional[str] = None,
+    reported_id: Optional[str] = None,
     page: int = 1,
     limit: int = 10,
 ):
     try:
-        # Build query
-        query = {}
+        # Build aggregation pipeline
+        pipeline = []
+
+        # Match stage for basic filters
+        match_stage = {}
         if type:
-            query["type"] = type
+            match_stage["type"] = type
         if status:
-            query["status"] = status
+            match_stage["status"] = status
+        if reported_id:
+            try:
+                match_stage["entity_id"] = ObjectId(reported_id)
+            except:
+                return AdminResponse.error(
+                    message="Invalid reported_id format", code="INVALID_REPORTED_ID"
+                )
+        if search:
+            try:
+                search_id = ObjectId(search)
+                match_stage["$or"] = [
+                    {"_id": search_id},
+                    {"entity_id": search_id},
+                    {"reported_by": search_id},
+                    {"description": {"$regex": search, "$options": "i"}},
+                    {"reason": {"$regex": search, "$options": "i"}},
+                ]
+            except:
+                match_stage["$or"] = [
+                    {"description": {"$regex": search, "$options": "i"}},
+                    {"reason": {"$regex": search, "$options": "i"}},
+                ]
 
-        # Calculate skip
-        skip = (page - 1) * limit
+        if match_stage:
+            pipeline.append({"$match": match_stage})
 
-        # Get total count
-        total = reports_collection.count_documents(query)
-
-        # Get reports
-        reports = (
-            reports_collection.find(query)
-            .sort("created_at", -1)
-            .skip(skip)
-            .limit(limit)
+        # Add reporter information first
+        pipeline.append(
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "reported_by",
+                    "foreignField": "_id",
+                    "as": "reporter",
+                    "pipeline": [{"$project": {"_id": 1, "name": 1, "email": 1}}],
+                }
+            }
         )
 
+        # Add entity information based on type
+        pipeline.append(
+            {
+                "$lookup": {
+                    "from": "users",
+                    "let": {"entity_id": "$entity_id"},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$eq": ["$_id", "$$entity_id"]}}},
+                        {
+                            "$project": {
+                                "_id": 1,
+                                "name": 1,
+                                "email": 1,
+                                "is_banned": 1,
+                                "created_at": 1,
+                            }
+                        },
+                    ],
+                    "as": "reported_user",
+                }
+            }
+        )
+
+        pipeline.append(
+            {
+                "$lookup": {
+                    "from": "items",
+                    "let": {"entity_id": "$entity_id"},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$eq": ["$_id", "$$entity_id"]}}},
+                        {
+                            "$project": {
+                                "_id": 1,
+                                "title": 1,
+                                "description": 1,
+                                "status": 1,
+                                "seller_id": 1,
+                                "created_at": 1,
+                            }
+                        },
+                    ],
+                    "as": "reported_item",
+                }
+            }
+        )
+
+        # Add fields to combine the entity information
+        pipeline.append(
+            {
+                "$addFields": {
+                    "reported_entity": {
+                        "$cond": {
+                            "if": {"$eq": ["$type", "user"]},
+                            "then": {"$arrayElemAt": ["$reported_user", 0]},
+                            "else": {"$arrayElemAt": ["$reported_item", 0]},
+                        }
+                    },
+                    "reporter": {"$arrayElemAt": ["$reporter", 0]},
+                }
+            }
+        )
+
+        # Project to clean up the response
+        pipeline.append(
+            {
+                "$project": {
+                    "_id": 1,
+                    "type": 1,
+                    "status": 1,
+                    "description": 1,
+                    "reason": 1,
+                    "created_at": 1,
+                    "entity_id": 1,
+                    "reported_entity": 1,
+                    "reporter": 1,
+                }
+            }
+        )
+
+        # Sort by creation date
+        pipeline.append({"$sort": {"created_at": -1}})
+
+        # Count total documents
+        count_pipeline = pipeline.copy()
+        count_pipeline.append({"$count": "total"})
+        total_result = list(reports_collection.aggregate(count_pipeline))
+        total = total_result[0]["total"] if total_result else 0
+
+        # Add pagination
+        pipeline.append({"$skip": (page - 1) * limit})
+        pipeline.append({"$limit": limit})
+
+        # Execute aggregation
+        reports = list(reports_collection.aggregate(pipeline))
+
         # Convert ObjectId to string
-        reports_list = []
         for report in reports:
             report["_id"] = str(report["_id"])
             report["entity_id"] = str(report["entity_id"])
-            report["reported_by"] = str(report["reported_by"])
-            reports_list.append(report)
+            if report.get("reported_entity"):
+                report["reported_entity"]["_id"] = str(report["reported_entity"]["_id"])
+            if report.get("reporter"):
+                report["reporter"]["_id"] = str(report["reporter"]["_id"])
 
         return AdminResponse.success(
-            data=reports_list, meta={"total": total, "page": page, "limit": limit}
+            data=reports, meta={"total": total, "page": page, "limit": limit}
         )
 
     except Exception as e:
@@ -367,10 +565,13 @@ async def get_report(report_id: str, admin_check: bool = Depends(checkRole)):
 
 @router.patch("/reports/{report_id}")
 async def update_report_status(
-    report_id: str, status: str, admin_check: bool = Depends(checkRole)
+    report_id: str,
+    update_data: dict = Body(...),
+    admin_check: bool = Depends(checkRole),
 ):
     try:
         # Validate status
+        status = update_data.get("status")
         if status not in ["pending", "resolved", "dismissed", "escalated"]:
             return AdminResponse.error(message="Invalid status", code="INVALID_STATUS")
 
@@ -849,5 +1050,34 @@ async def update_settings(
         return AdminResponse.error(
             message="Failed to update settings",
             code="SETTINGS_UPDATE_ERROR",
+            details={"error": str(e)},
+        )
+
+
+@router.get("/search-suggestions")
+async def get_search_suggestions(
+    query: str, limit: int = 5, admin_check: bool = Depends(checkRole)
+):
+    try:
+        # Build search query
+        search_query = {"name": {"$regex": query, "$options": "i"}}
+
+        # Get suggestions with limited fields
+        suggestions = list(
+            user_collection.find(search_query, {"_id": 1, "name": 1, "email": 1}).limit(
+                limit
+            )
+        )
+
+        # Convert ObjectId to string
+        for suggestion in suggestions:
+            suggestion["_id"] = str(suggestion["_id"])
+
+        return AdminResponse.success(data=suggestions)
+
+    except Exception as e:
+        return AdminResponse.error(
+            message="Failed to fetch search suggestions",
+            code="SEARCH_SUGGESTIONS_ERROR",
             details={"error": str(e)},
         )

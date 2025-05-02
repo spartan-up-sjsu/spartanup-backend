@@ -22,7 +22,7 @@ router = APIRouter()
 from fastapi import HTTPException, Request
 
 
-async def get_current_user_id_id(request: Request):
+async def get_current_user_id(request: Request):
     # Getting from authorization header
     auth_header = request.headers.get("Authorization")
     if auth_header:
@@ -39,6 +39,12 @@ async def get_current_user_id_id(request: Request):
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     user_id = verify_access_token(token)
+    # make sure user is not banned
+    banned_user = user_collection.find_one(
+        {"is_banned": True, "_id": ObjectId(user_id)}
+    )
+    if banned_user:
+        raise HTTPException(status_code=401, detail="User is banned")
     return user_id
 
 

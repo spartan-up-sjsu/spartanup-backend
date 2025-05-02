@@ -19,7 +19,7 @@ import cloudinary.uploader
 import json
 from typing import Optional
 from app.core.security import verify_access_token
-from app.routers.api import get_current_user_id_id
+from app.routers.api import get_current_user_id
 from datetime import datetime, timedelta
 
 router = APIRouter()
@@ -27,7 +27,7 @@ router = APIRouter()
 
 @router.get("/")
 async def get_items(
-    user_id: str = Depends(get_current_user_id_id),
+    user_id: str = Depends(get_current_user_id),
     category: Optional[str] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
@@ -76,7 +76,7 @@ async def get_items(
                         }
                     }
                 },
-                {"status": "active"}
+                {"status": "active"},
             ]
             logger.debug(f"Added search filter for pattern: {search_pattern}")
         if seller_id:
@@ -127,7 +127,7 @@ async def get_item(item_id: str):
 async def create_item(
     item: str = Form(...),
     files: List[UploadFile] = File(...),
-    user_id=Depends(get_current_user_id_id),
+    user_id=Depends(get_current_user_id),
 ):
     try:
         logger.info("Creating items")
@@ -172,7 +172,7 @@ async def delete_item(item_id: str):
 async def update_item(
     item_id: str,
     update: str = Form(...),
-    user_id: str = Depends(get_current_user_id_id),
+    user_id: str = Depends(get_current_user_id),
     add_files: Optional[List[UploadFile]] = File(None),
 ):
     try:
@@ -236,86 +236,89 @@ async def update_item(
         logger.error(f"Error updating item {item_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Cannot update item")
 
+
 # Example response: {"message":"Inquiries retrieved successfully","data":[{"status":"inprogress","created_at":"2025-05-01T02:06:31.530000","updated_at":"2025-05-01T02:06:31.530000","conversation_id":"6812d76b37f58f25ff60b6ae","buyer":{"_id":"6812bf5ddc3637053b41f4c7","email":"thedrun2004@gmail.com","profile_picture":null,"rating":null}}]}
 @router.get("/{item_id}/inquiries")
 async def get_item_inquiries(
     item_id: str,
-    user_id: str = Depends(get_current_user_id_id),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Get users who have inquired about a specific item.
-    
+
     This endpoint uses MongoDB's aggregation pipeline to fetch users who have
     started conversations about the item, including their profile information.
     """
     try:
-        logger.info(f"[GET /items/{item_id}/inquiries] Retrieving inquiries for item: {item_id}")
-        
+        logger.info(
+            f"[GET /items/{item_id}/inquiries] Retrieving inquiries for item: {item_id}"
+        )
+
         # First, verify the item exists and the requester is the seller
         item = items_collection.find_one({"_id": ObjectId(item_id)})
         if not item:
             logger.error(f"Item {item_id} not found")
             raise HTTPException(status_code=404, detail="Item not found")
-            
+
         if str(item["seller_id"]) != str(user_id):
-            logger.warning(f"User {user_id} not authorized to view inquiries for item {item_id}")
-            raise HTTPException(
-                status_code=403, 
-                detail="Only the seller can view inquiries for this item"
+            logger.warning(
+                f"User {user_id} not authorized to view inquiries for item {item_id}"
             )
-        
+            raise HTTPException(
+                status_code=403,
+                detail="Only the seller can view inquiries for this item",
+            )
+
         # Use aggregation pipeline to get users who inquired about the item
         pipeline = [
             # Match conversations for this item
             {"$match": {"item_id": ObjectId(item_id)}},
-            
             # Lookup user information for each buyer
-            {"$lookup": {
-                "from": "users",
-                "localField": "buyer_id",
-                "foreignField": "_id",
-                "as": "buyer_info"
-            }},
-            
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "buyer_id",
+                    "foreignField": "_id",
+                    "as": "buyer_info",
+                }
+            },
             # Unwind the buyer_info array
             {"$unwind": "$buyer_info"},
-            
             # Project only the fields we need
-            {"$project": {
-                "_id": 0,
-                "conversation_id": "$_id",
-                "status": 1,
-                "created_at": 1,
-                "updated_at": 1,
-                "buyer": {
-                    "_id": "$buyer_info._id",
-                    "full_name": {"$ifNull": ["$buyer_info.full_name", "$buyer_info.name"]},
-                    "email": "$buyer_info.email",
-                    "picture": {"$ifNull": ["$buyer_info.picture", None]},
-                    "rating": {"$ifNull": ["$buyer_info.rating", None]}
+            {
+                "$project": {
+                    "_id": 0,
+                    "conversation_id": "$_id",
+                    "status": 1,
+                    "created_at": 1,
+                    "updated_at": 1,
+                    "buyer": {
+                        "_id": "$buyer_info._id",
+                        "full_name": {
+                            "$ifNull": ["$buyer_info.full_name", "$buyer_info.name"]
+                        },
+                        "email": "$buyer_info.email",
+                        "picture": {"$ifNull": ["$buyer_info.picture", None]},
+                        "rating": {"$ifNull": ["$buyer_info.rating", None]},
+                    },
                 }
-            }},
-            
+            },
             # Sort by most recent first
-            {"$sort": {"updated_at": -1}}
+            {"$sort": {"updated_at": -1}},
         ]
-        
+
         inquiries = list(conversations_collection.aggregate(pipeline))
-        
+
         # Convert ObjectId to string for JSON serialization
         for inquiry in inquiries:
             inquiry["conversation_id"] = str(inquiry["conversation_id"])
             inquiry["buyer"]["_id"] = str(inquiry["buyer"]["_id"])
-            
+
         logger.info(f"Found {len(inquiries)} inquiries for item {item_id}")
-        return {
-            "message": "Inquiries retrieved successfully",
-            "data": inquiries
-        }
-        
+        return {"message": "Inquiries retrieved successfully", "data": inquiries}
+
     except errors.InvalidId:
         logger.error(f"Invalid ObjectId format: {item_id}")
         raise HTTPException(status_code=400, detail="Invalid item ID format")
     except Exception as e:
         logger.error(f"Error retrieving inquiries for item {item_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Cannot retrieve inquiries")
-

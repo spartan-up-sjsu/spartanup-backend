@@ -47,8 +47,9 @@ async def get_items(
             query = {"seller_id": {"$ne": user_id}}
             logger.debug(f"Filtering for non-personal items. Query: {query}")
         if category:
-            query["category"] = category
-            logger.debug(f"Added category filter: {category}")
+            categories = category.split(",")
+            query["category"] = {"$in": categories}
+            logger.debug(f"Added category filter: {categories}")
         if min_price is not None or max_price is not None:
             price_filter = {}
             if min_price is not None:

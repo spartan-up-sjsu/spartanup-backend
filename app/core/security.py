@@ -56,14 +56,14 @@ def decrypt_payload(token: str) -> dict:
 
 # Create an access token that expires after 'expires_delta' minutes.
 def create_access_token(user_id: str, expires_delta: int = 60) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=expires_delta)
+    expire = datetime.utcnow() + timedelta(minutes=expires_delta)
     payload = {"sub": user_id, "exp": expire.timestamp(), "type": "access"}
     return encrypt_payload(payload)
 
 
 # Create a refresh token that expires after 7 days by default.
 def create_refresh_token(user_id: str, expires_delta: int = 60 * 24 * 7) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=expires_delta)
+    expire = datetime.utcnow() + timedelta(minutes=expires_delta)
     payload = {"sub": user_id, "exp": expire.timestamp(), "type": "refresh"}
     return encrypt_payload(payload)
 

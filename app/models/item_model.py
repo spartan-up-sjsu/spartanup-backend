@@ -1,4 +1,3 @@
-
 from typing import Optional, List, Literal
 from pydantic import BaseModel, HttpUrl, Field, validator
 from datetime import datetime
@@ -6,10 +5,12 @@ from bson import ObjectId as _ObjectId
 from typing_extensions import Annotated
 from pydantic.functional_validators import AfterValidator
 
+
 def check_object_id(value: str) -> str:
     if not _ObjectId.is_valid(value):
-        raise ValueError('Invalid ObjectId')
+        raise ValueError("Invalid ObjectId")
     return value
+
 
 ObjectId = Annotated[str, AfterValidator(check_object_id)]
 
@@ -22,7 +23,7 @@ class ItemCreate(BaseModel):
     category: str
     status: Optional[str] = "active"
     createdAt: datetime = Field(default_factory=datetime.utcnow)
-    
+
 
 class ItemRead(ItemCreate):
     created_at: datetime = None
@@ -32,10 +33,12 @@ class ItemRead(ItemCreate):
 class ItemFromDB(ItemRead):
     _id: str
 
+
 class Config:
     arbitrary_types_allowed = True
-    json_encoders = {ObjectId: str} 
-    
+    json_encoders = {ObjectId: str}
+
+
 class ProductUpdate(BaseModel):
     title: Optional[str] = None
     price: Optional[float] = None
@@ -50,6 +53,7 @@ class ProductUpdate(BaseModel):
         if not str(v).startswith("https://res.cloudinary.com/"):
             raise ValueError("Only Cloudinary image URLs are allowed")
         return v
+
     @validator("price")
     def validate_price(cls, price: float):
         if price < 0:

@@ -60,7 +60,7 @@ async def get_dashboard_stats(admin_check: bool = Depends(checkRole)):
         active_messages = conversations_collection.count_documents({"status": "active"})
 
         # Get recent activity (last 24 hours)
-        one_day_ago = datetime.now() - timedelta(days=1)
+        one_day_ago = datetime.utcnow() - timedelta(days=1)
 
         recent_activity = []
 
@@ -661,10 +661,7 @@ async def list_items(
         # Build query
         query = {}
         if search:
-            query["$or"] = [
-                {"title": {"$regex": search, "$options": "i"}},
-                {"description": {"$regex": search, "$options": "i"}},
-            ]
+            query["title"] = {"$regex": search, "$options": "i"}
         if category:
             query["category"] = category
         if status:

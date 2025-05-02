@@ -58,34 +58,26 @@ async def get_items(
             query["price"] = price_filter
             logger.debug(f"Added price filter: {price_filter}")
         if search:
+            logger.info(f"Processing search query: '{search}'")
             search_pattern = search.lower()
-            query["$or"] = [
-                {
-                    "$expr": {
-                        "$regexMatch": {
-                            "input": {"$toLower": "$title"},
-                            "regex": search_pattern,
-                        }
-                    }
-                },
-                {
-                    "$expr": {
-                        "$regexMatch": {
-                            "input": {"$toLower": "$description"},
-                            "regex": search_pattern,
-                        }
-                    }
-                },
-                {"status": "active"},
-            ]
-            logger.debug(f"Added search filter for pattern: {search_pattern}")
+            logger.info(f"Converted search pattern: '{search_pattern}'")
+            # Add status condition to base query
+            query["status"] = "active"
+            # Add title search condition
+            query["$expr"] = {
+                "$regexMatch": {
+                    "input": {"$toLower": "$title"},
+                    "regex": search_pattern,
+                }
+            }
+            logger.info(f"Search conditions added to query: {query}")
         if seller_id:
             query["seller_id"] = seller_id
             logger.debug(f"Added seller_id filter: {seller_id}")
         if recency is not None:
             try:
                 days = int(recency)
-                since_date = datetime.now(datetime.timezone.utc) - timedelta(days=days)
+                since_date = datetime.utcnow() - timedelta(days=days)
                 query["createdAt"] = {"$gte": since_date}
                 logger.info(
                     f"Filtering items created in the last {days} days (since {since_date})"

@@ -4,18 +4,20 @@ from bson import ObjectId as _ObjectId
 from typing_extensions import Annotated
 from pydantic.functional_validators import AfterValidator
 
+
 def check_object_id(value: str) -> str:
     if not _ObjectId.is_valid(value):
-        raise ValueError('Invalid ObjectId')
+        raise ValueError("Invalid ObjectId")
     return value
+
 
 ObjectId = Annotated[str, AfterValidator(check_object_id)]
 
 
 class Message(BaseModel):
-    message: str  
+    message: str
     sender_id: ObjectId
-    conversation_id: ObjectId 
+    conversation_id: ObjectId
     created_at: datetime = datetime.utcnow()
     updated_at: datetime = datetime.utcnow()
 

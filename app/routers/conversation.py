@@ -131,7 +131,11 @@ async def create_conversation(
 
         # Sending initial message
         message = Message(
-            conversation_id=conversation_id, sender_id=user_id, message=initial_message
+            conversation_id=conversation_id,
+            sender_id=user_id,
+            message=initial_message,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
         )
         message_data = message.model_dump()
         message_data["conversation_id"] = ObjectId(message_data["conversation_id"])
@@ -182,16 +186,16 @@ async def send_message(
             if sender_id == str(conversation["buyer_id"])
             else str(conversation["buyer_id"])
         )
-        
+
         # Create timestamp for both fields
         current_time = datetime.utcnow()
-        
+
         message = Message(
             conversation_id=conversation_id,  # This will stay a string for validation
             sender_id=str(sender_id),  # Convert ObjectId to string for validation
             message=message,
             created_at=current_time,
-            updated_at=current_time
+            updated_at=current_time,
         )
 
         # Insert the message into MongoDB with ObjectId
@@ -202,13 +206,13 @@ async def send_message(
         message_data["sender_id"] = ObjectId(
             message_data["sender_id"]
         )  # Convert to ObjectId for MongoDB
-        
+
         # Ensure timestamps are included in the database document
         message_data["created_at"] = current_time
         message_data["updated_at"] = current_time
 
         result = messages_collection.insert_one(message_data)
-        
+
         # this is where the notification should go, using websockets example json payload here with multiplexing in mine:
         notification_payload = {
             "type": "message",
@@ -220,7 +224,10 @@ async def send_message(
             },
         }
         await ws_manager.send_message(recipient_id, notification_payload)
-        return {"message": "Message sent successfully", "message_id": str(result.inserted_id)}
+        return {
+            "message": "Message sent successfully",
+            "message_id": str(result.inserted_id),
+        }
     except errors.InvalidId:
         logger.error("Invalid conversation ID format")
         raise HTTPException(status_code=400, detail="Invalid conversation ID format")
@@ -590,48 +597,49 @@ async def get_conversation(conversation_id: str):
     try:
         logger.info(f"Finding conversation in MongoDB with ID: {conversation_id}")
         object_id = ObjectId(conversation_id)
-        
+
         # Use aggregation pipeline to get conversation with all related data in one query
         pipeline = [
             # Match the specific conversation
             {"$match": {"_id": object_id}},
-            
             # Lookup seller details
             {
                 "$lookup": {
                     "from": "users",
                     "localField": "seller_id",
                     "foreignField": "_id",
-                    "as": "seller_details"
+                    "as": "seller_details",
                 }
             },
             # Unwind seller details (convert array to object)
-            {"$unwind": {"path": "$seller_details", "preserveNullAndEmptyArrays": True}},
-            
+            {
+                "$unwind": {
+                    "path": "$seller_details",
+                    "preserveNullAndEmptyArrays": True,
+                }
+            },
             # Lookup buyer details
             {
                 "$lookup": {
                     "from": "users",
                     "localField": "buyer_id",
                     "foreignField": "_id",
-                    "as": "buyer_details"
+                    "as": "buyer_details",
                 }
             },
             # Unwind buyer details
             {"$unwind": {"path": "$buyer_details", "preserveNullAndEmptyArrays": True}},
-            
             # Lookup item details
             {
                 "$lookup": {
                     "from": "items",
                     "localField": "item_id",
                     "foreignField": "_id",
-                    "as": "item_details"
+                    "as": "item_details",
                 }
             },
             # Unwind item details
             {"$unwind": {"path": "$item_details", "preserveNullAndEmptyArrays": True}},
-            
             # Project only the fields we need
             {
                 "$project": {
@@ -663,35 +671,39 @@ async def get_conversation(conversation_id: str):
                         "status": "$item_details.status",
                         "condition": "$item_details.condition",
                         "category": "$item_details.category",
-                    }
+                    },
                 }
-            }
+            },
         ]
-        
+
         # Execute the aggregation pipeline
         conversation_result = await asyncio.to_thread(
             lambda: list(conversations_collection.aggregate(pipeline))
         )
-        
+
         if not conversation_result:
             logger.error("Unable to find conversation")
             raise HTTPException(status_code=404, detail="Conversation not found")
-            
+
         conversation = conversation_result[0]
-        
+
         # Get messages for this conversation
         messages = await asyncio.to_thread(
-            lambda: list(messages_collection.find({"conversation_id": object_id}).sort("created_at", 1))
+            lambda: list(
+                messages_collection.find({"conversation_id": object_id}).sort(
+                    "created_at", 1
+                )
+            )
         )
-        
+
         # Process messages
         serialized_messages = list_serialize_messages(messages)
-        
+
         # Get latest message
         latest_message = None
         if serialized_messages:
             latest_message = serialized_messages[-1]  # Already sorted by created_at
-        
+
         # Serialize conversation
         serialized_conversation = {
             "id": str(conversation["_id"]),
@@ -701,31 +713,65 @@ async def get_conversation(conversation_id: str):
             "created_at": conversation.get("created_at", datetime.utcnow()).isoformat(),
             "updated_at": conversation.get("updated_at", datetime.utcnow()).isoformat(),
             "status": conversation.get("status", "active"),
-            "seller_details": {
-                "id": str(conversation["seller_details"]["_id"]) if conversation.get("seller_details") else None,
-                "email": conversation.get("seller_details", {}).get("email", ""),
-                "name": conversation.get("seller_details", {}).get("name", ""),
-                "picture": conversation.get("seller_details", {}).get("picture", ""),
-            } if conversation.get("seller_details") else None,
-            "buyer_details": {
-                "id": str(conversation["buyer_details"]["_id"]) if conversation.get("buyer_details") else None,
-                "email": conversation.get("buyer_details", {}).get("email", ""),
-                "name": conversation.get("buyer_details", {}).get("name", ""),
-                "picture": conversation.get("buyer_details", {}).get("picture", ""),
-            } if conversation.get("buyer_details") else None,
-            "item_details": {
-                "id": str(conversation["item_details"]["_id"]) if conversation.get("item_details") else None,
-                "title": conversation.get("item_details", {}).get("title", ""),
-                "price": conversation.get("item_details", {}).get("price", 0),
-                "description": conversation.get("item_details", {}).get("description", ""),
-                "images": conversation.get("item_details", {}).get("images", []),
-                "status": conversation.get("item_details", {}).get("status", "active"),
-                "condition": conversation.get("item_details", {}).get("condition", ""),
-                "category": conversation.get("item_details", {}).get("category", ""),
-            } if conversation.get("item_details") else None,
-            "latest_message": latest_message
+            "seller_details": (
+                {
+                    "id": (
+                        str(conversation["seller_details"]["_id"])
+                        if conversation.get("seller_details")
+                        else None
+                    ),
+                    "email": conversation.get("seller_details", {}).get("email", ""),
+                    "name": conversation.get("seller_details", {}).get("name", ""),
+                    "picture": conversation.get("seller_details", {}).get(
+                        "picture", ""
+                    ),
+                }
+                if conversation.get("seller_details")
+                else None
+            ),
+            "buyer_details": (
+                {
+                    "id": (
+                        str(conversation["buyer_details"]["_id"])
+                        if conversation.get("buyer_details")
+                        else None
+                    ),
+                    "email": conversation.get("buyer_details", {}).get("email", ""),
+                    "name": conversation.get("buyer_details", {}).get("name", ""),
+                    "picture": conversation.get("buyer_details", {}).get("picture", ""),
+                }
+                if conversation.get("buyer_details")
+                else None
+            ),
+            "item_details": (
+                {
+                    "id": (
+                        str(conversation["item_details"]["_id"])
+                        if conversation.get("item_details")
+                        else None
+                    ),
+                    "title": conversation.get("item_details", {}).get("title", ""),
+                    "price": conversation.get("item_details", {}).get("price", 0),
+                    "description": conversation.get("item_details", {}).get(
+                        "description", ""
+                    ),
+                    "images": conversation.get("item_details", {}).get("images", []),
+                    "status": conversation.get("item_details", {}).get(
+                        "status", "active"
+                    ),
+                    "condition": conversation.get("item_details", {}).get(
+                        "condition", ""
+                    ),
+                    "category": conversation.get("item_details", {}).get(
+                        "category", ""
+                    ),
+                }
+                if conversation.get("item_details")
+                else None
+            ),
+            "latest_message": latest_message,
         }
-        
+
         logger.info("Fetching conversation with messages")
         return {
             "message": "Conversation and messages retrieved successfully",
